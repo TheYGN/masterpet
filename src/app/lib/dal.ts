@@ -8,19 +8,21 @@ import type { Session, UserRole } from './definitions'
 export const verifySession = cache(async (): Promise<Session | null> => {
   const supabase = await createClient()
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) return null
+  // getClaims() verifies the JWT signature locally with the JWKS — no auth API
+  // call, so it doesn't fail under rate limits or transient network issues the
+  // way getUser() does on Vercel.
+  const { data } = await supabase.auth.getClaims()
+  const claims = data?.claims as { sub?: string; email?: string } | undefined
+  const userId = claims?.sub
+  if (!userId) return null
 
   const { data: profile } = await supabase
     .from('users')
     .select('id, auth_user_id, tenant_id, email, full_name, role, branch_id, status')
-    .eq('auth_user_id', user.id)
+    .eq('auth_user_id', userId)
     .single()
 
-  if (!profile) return null
+  if (!profile || profile.status !== 'active') return null
 
   let tenant: Session['tenant'] = null
   if (profile.tenant_id) {
@@ -33,8 +35,8 @@ export const verifySession = cache(async (): Promise<Session | null> => {
   }
 
   return {
-    authUserId: user.id,
-    email: user.email ?? profile.email,
+    authUserId: userId,
+    email: claims?.email ?? profile.email,
     profile,
     tenant,
   }
