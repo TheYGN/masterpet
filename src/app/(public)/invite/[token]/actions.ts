@@ -23,7 +23,7 @@ export async function sendInviteMagicLinkAction(
     options: {
       emailRedirectTo: `${
         process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"
-      }/auth/callback?invitation_token=${token}`,
+      }/auth/confirm?invitation_token=${token}`,
     },
   });
 

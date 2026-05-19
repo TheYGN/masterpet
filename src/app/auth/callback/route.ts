@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createServerClient } from "@supabase/ssr";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 
 export async function GET(request: NextRequest) {
@@ -13,7 +13,32 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${origin}/login?error=auth_failed`);
   }
 
-  const supabase = await createClient();
+  // Single response object — Supabase will attach Set-Cookie headers to it.
+  // We only mutate its Location at the end; never recreate it.
+  const response = NextResponse.redirect(`${origin}/login?error=auth_failed`);
+
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            request.cookies.set(name, value);
+            response.cookies.set(name, value, options);
+          });
+        },
+      },
+    }
+  );
+
+  const redirectTo = (path: string) => {
+    response.headers.set("Location", `${origin}${path}`);
+    return response;
+  };
 
   if (token_hash) {
     const { error } = await supabase.auth.verifyOtp({
@@ -57,9 +82,6 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(`${origin}/login?error=invite_invalid`);
     }
 
-    // Verify the invitation email matches the authenticated user's email.
-    // Without this, Mallory could log in with their own email + Victim's
-    // invitation_token and take over Victim's seat in the tenant.
     if (
       inv.email &&
       inv.email.toLowerCase() !== (user.email ?? "").toLowerCase()
@@ -67,7 +89,6 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(`${origin}/login?error=invite_email_mismatch`);
     }
 
-    // Create user profile
     const { error: userError } = await admin.from("users").insert({
       auth_user_id: user.id,
       tenant_id: inv.tenant_id,
@@ -79,21 +100,18 @@ export async function GET(request: NextRequest) {
     });
 
     if (userError && userError.code !== "23505") {
-      // 23505 = unique violation (already exists) — treat as ok
       return NextResponse.redirect(`${origin}/login?error=auth_failed`);
     }
 
-    // Mark invitation accepted
     await admin
       .from("invitations")
       .update({ status: "accepted", accepted_at: new Date().toISOString() })
       .eq("id", inv.id);
 
-    return NextResponse.redirect(`${origin}/dashboard`);
+    return redirectTo("/dashboard");
   }
 
   // ── Normal login flow ────────────────────────────────────────────
-  // Use service-role client to bypass RLS; only reads role for redirect.
   const admin = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -107,10 +125,10 @@ export async function GET(request: NextRequest) {
     .single();
 
   if (profile?.role === "super_admin") {
-    return NextResponse.redirect(`${origin}/super-admin/tenants`);
+    return redirectTo("/super-admin/tenants");
   }
   if (profile) {
-    return NextResponse.redirect(`${origin}/dashboard`);
+    return redirectTo("/dashboard");
   }
 
   return NextResponse.redirect(`${origin}/login?error=no_profile`);

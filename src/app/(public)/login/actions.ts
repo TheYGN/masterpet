@@ -22,11 +22,17 @@ export async function loginAction(
   const { error } = await supabase.auth.signInWithOtp({
     email,
     options: {
-      emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"}/auth/callback`,
+      emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"}/auth/confirm`,
     },
   });
 
   if (error) {
+    console.error("[loginAction] signInWithOtp failed:", {
+      message: error.message,
+      status: error.status,
+      code: error.code,
+      name: error.name,
+    });
     return { error: "אירעה שגיאה בשליחת הקישור. אנא נסו שוב." };
   }
 
