@@ -3,6 +3,7 @@ import 'server-only'
 import { cache } from 'react'
 import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import type { Session, UserRole } from './definitions'
 
@@ -31,42 +32,40 @@ async function jwtFromCookies(): Promise<string | null> {
 }
 
 export const verifySession = cache(async (): Promise<Session | null> => {
-  const supabase = await createClient()
+  const baseClient = await createClient()
 
-  // Read JWT directly from the cookie so we don't depend on Supabase's session
-  // loader (which can return null on Vercel due to storage edge cases). Then
-  // verify locally with getClaims(jwt) — JWKS signature check, no auth API call.
+  // Read JWT directly from the cookie. Bypasses Supabase's session loader,
+  // which on Vercel can fail to attach the JWT to the client's Authorization
+  // header (and then RLS sees an anonymous request).
   const jwt = await jwtFromCookies()
-  if (!jwt) {
-    console.log('[verifySession] no jwt in cookies')
-    return null
-  }
-  const { data, error } = await supabase.auth.getClaims(jwt)
-  if (error || !data) {
-    console.log('[verifySession] getClaims failed:', error?.message)
-    return null
-  }
+  if (!jwt) return null
+
+  // Verify the JWT locally with getClaims(jwt) — JWKS signature check, no API.
+  const { data, error } = await baseClient.auth.getClaims(jwt)
+  if (error || !data) return null
   const claims = data.claims as { sub?: string; email?: string }
   const userId = claims.sub
-  if (!userId) {
-    console.log('[verifySession] no sub in claims')
-    return null
-  }
+  if (!userId) return null
 
-  const { data: profile, error: profileError } = await supabase
+  // Build a Supabase client with the JWT pinned as Authorization so RLS sees
+  // the authenticated user (current_user_role(), auth.uid()) on the queries
+  // below.
+  const supabase = createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: { headers: { Authorization: `Bearer ${jwt}` } },
+    }
+  )
+
+  const { data: profile } = await supabase
     .from('users')
     .select('id, auth_user_id, tenant_id, email, full_name, role, branch_id, status')
     .eq('auth_user_id', userId)
     .single()
 
-  if (profileError) {
-    console.log('[verifySession] profile query error:', profileError.message, 'code:', profileError.code)
-  }
-
-  if (!profile || profile.status !== 'active') {
-    console.log('[verifySession] no active profile for', userId)
-    return null
-  }
+  if (!profile || profile.status !== 'active') return null
 
   let tenant: Session['tenant'] = null
   if (profile.tenant_id) {
@@ -80,7 +79,7 @@ export const verifySession = cache(async (): Promise<Session | null> => {
 
   return {
     authUserId: userId,
-    email: claims?.email ?? profile.email,
+    email: claims.email ?? profile.email,
     profile,
     tenant,
   }
