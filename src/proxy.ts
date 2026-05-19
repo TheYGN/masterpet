@@ -8,8 +8,6 @@ const PUBLIC_PATHS = [
   '/auth/callback',
 ]
 
-const AUTH_PAGES = ['/login', '/signup']
-
 const PUBLIC_PREFIXES = [
   '/invite/',
   '/_next/',
@@ -52,13 +50,6 @@ export async function proxy(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser()
-
-  if (user && AUTH_PAGES.includes(pathname)) {
-    const url = request.nextUrl.clone()
-    url.pathname = '/dashboard'
-    url.search = ''
-    return NextResponse.redirect(url)
-  }
 
   if (isPublic(pathname)) {
     return response
