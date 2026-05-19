@@ -1,13 +1,23 @@
 # מוסכמת תיקיית designs/ — MasterPet
 
+## קבצי-על — חובה לקרוא לפני כל משימת עיצוב
+
+1. **[`../../designs/DESIGN-SYSTEM.md`](../../designs/DESIGN-SYSTEM.md)** — Source of Truth עיצובי. tokens, רכיבים, RTL, iconography.
+2. **[`../../designs/PROMPT-TEMPLATE.md`](../../designs/PROMPT-TEMPLATE.md)** — תבנית פרומפט לייצור מסך חדש (חלק A סטטי + חלק B משתנה).
+3. **[`../workflows/design-screen.md`](../workflows/design-screen.md)** — הזרימה (חדש/עדכון + git protocol).
+
+---
+
+## מבנה התיקייה
+
 כל עיצוב שמייצאים מ-Claude Design (או מכל כלי אחר) נשמר כאן:
 
 ```
 C:\Users\Yarin Golan\Desktop\masterpet\
   designs\
-    dashboard-owner\        ← דשבורד בעל עסק
-    dashboard-branch\       ← דשבורד מנהל סניף
-    dashboard-warehouse\    ← דשבורד מנהל מחסן
+    DESIGN-SYSTEM.md        ← מקור-אמת עיצובי (לקרוא קודם!)
+    PROMPT-TEMPLATE.md      ← תבנית פרומפט למסך חדש
+    dashboard-branch\       ← דשבורד בעל עסק (קיים, רפרנס לכל מסך)
     order-inbox\            ← Order Inbox Omnichannel
     order-detail\           ← עמוד הזמנה בודדת
     crm-customer-list\      ← רשימת לקוחות
@@ -21,27 +31,50 @@ C:\Users\Yarin Golan\Desktop\masterpet\
     settings\               ← הגדרות
 ```
 
+## מבנה תיקיית העיצובים
+
+Claude Design מייצא ZIP שמוחלץ ל-`designs/MasterPet/` — **זהו מקור-האמת העיצובי**:
+
+```
+designs/MasterPet/
+├── MasterPet Dashboard.html   ← דשבורד
+├── parts.jsx / main.jsx / data.jsx / chart.jsx
+└── designs/
+    ├── order-inbox/
+    │   ├── MasterPet Order Inbox.html
+    │   ├── parts.jsx / main.jsx / data.jsx
+    └── <slug>/
+        └── ...
+```
+
+**כתובות:**
+- דשבורד: `designs/MasterPet/MasterPet Dashboard.html`
+- מסך אחר: `designs/MasterPet/designs/<slug>/MasterPet <Name>.html`
+
+**עדכון:** המשתמש מחלץ ZIP → `designs/MasterPet/` מוחלפת בשלמות. אין צורך לסדר ידנית.
+
+## ניהול גרסאות — אופציה C (מחיקה + git)
+
+עדכון מסך = מחיקת התיקייה הקיימת + יצירה מחדש. ההיסטוריה נשמרת ב-git:
+- לפני מחיקה: snapshot commit של הגרסה הישנה
+- אחרי יצירה: commit חדש עם תיאור השינוי
+- אסור ליצור `dashboard-v2/` או `dashboard-new/` במקביל
+
+ראה פירוט מלא ב-[`workflows/design-screen.md`](../workflows/design-screen.md).
+
 ## כיצד להשתמש
 
-1. מייצאים מ-Claude Design (PNG מומלץ, 1440px)
-2. שומרים בתיקייה המתאימה בשם ברור: `mockup-v1.png`, `mockup-v2.png`
-3. אומרים ל-Orchestrator: "תממש את מסך dashboard-owner"
-4. הוא יפעיל את `ui-implementer` שיבדוק את התיקייה אוטומטית
-
-## naming convention לקבצים
-
-- `mockup-v<N>.jsx` / `mockup-v<N>.tsx` — קוד JSX של העיצוב (עדיפות ראשונה)
-- `mockup-v<N>.png` — screenshot / export מ-Claude Design
-- `mobile-v<N>.png` — גרסה מובייל
-- `states-v<N>.png` — states שונים (error, loading, empty)
-- `components-v<N>.png` — ספריית components של המסך
+1. ה-agent כותב `PROMPT.md` (Part A + Part B) ושומר ב-`designs/<slug>/`
+2. שולחים את הפרומפט ל-Claude Design
+3. Claude Design מייצר את המסך בפנים ומוסיף אותו ל-ZIP
+4. המשתמש מוריד ZIP, מחלץ → `designs/MasterPet/` מוחלפת בשלמות
+5. אומרים ל-Orchestrator: "תממש את מסך <slug>" — הוא יפעיל את `ui-implementer`
 
 ## סדר עדיפות שהסוכן קורא
 
 ```
-JSX/TSX  →  PNG/JPG  →  SVG  →  HTML  →  JSON
-(הכי מועיל)                          (הכי כללי)
+HTML + JSX  →  PNG/JPG  →  SVG  →  JSON
+(הכי מלא)                         (הכי כללי)
 ```
 
-אם יש גם JSX וגם PNG באותה תיקייה — הסוכן ישתמש ב-JSX
-ויציג את ה-PNG כ-reference ויזואלי בלבד.
+אם יש גם HTML וגם PNG — קרא את ה-HTML + JSX, השתמש ב-PNG כ-reference ויזואלי בלבד.

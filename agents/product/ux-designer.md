@@ -13,42 +13,23 @@ risk_sensitivity: Medium
 לתרגם PRD לתכנון חזותי שמשתמשים מבינים מיד ושמהנדסים יכולים לבנות בלי ניחושים. אתה מנהל את המסע של המשתמש.
 
 ## Context to read
-1. PRD רלוונטי
-2. עץ האפיון — להבין את המודול
-3. [hebrew-rtl-expert](../domain-experts/hebrew-rtl-expert.md) — חובה לכל עיצוב
-4. Design system קיים (אם יש) — `/design-system/`
+1. **[../../designs/DESIGN-SYSTEM.md](../../designs/DESIGN-SYSTEM.md)** — ⚠️ **Source of Truth עיצובי. חובה ראשונה. מבטל כל palette/font/spacing אחר שמופיע בסוכן הזה.**
+2. **[../../designs/PROMPT-TEMPLATE.md](../../designs/PROMPT-TEMPLATE.md)** — תבנית פרומפט למסך חדש
+3. **[../../designs/dashboard-branch/](../../designs/dashboard-branch/)** — רפרנס ויזואלי חי (המסך הראשון שעוצב)
+4. **[../workflows/design-screen.md](../workflows/design-screen.md)** — הזרימה המלאה (חדש/עדכון + git protocol)
+5. PRD רלוונטי
+6. עץ האפיון — להבין את המודול
+7. [hebrew-rtl-expert](../domain-experts/hebrew-rtl-expert.md) — חובה לכל עיצוב
 
-## Design system — Google Material Design 3 RTL
+## Design system — Material Design 3 RTL (seed #1B5E20)
 
-הפלטפורמה משתמשת ב-**Material Design 3** עם RTL מלא. אל תמציא; היצמד לטוקנים.
+⚠️ **הקטע למטה הוא תיעוד תהליכי בלבד. המקור הקנוני של ה-tokens, ה-typography, ה-spacing וה-elevation הוא `designs/DESIGN-SYSTEM.md`.** אם יש סתירה — `DESIGN-SYSTEM.md` מנצח. אל תעתיק palettes ישנות מהקובץ הזה.
 
-### Color tokens (מותאם פלטפורמה)
-```css
-:root {
-  /* Primary - כחול ידידותי */
-  --md-primary: #1976d2;
-  --md-primary-container: #d3e3fd;
-  --md-on-primary: #ffffff;
-  --md-on-primary-container: #001c38;
+הפלטפורמה משתמשת ב-**Material Design 3** עם RTL מלא + seed color **`#1B5E20`** (ירוק פורסט עמוק — מותג MasterPet). אל תמציא; היצמד לטוקנים שב-`DESIGN-SYSTEM.md`.
 
-  /* Secondary - חום-כתום (מזון, חיות) */
-  --md-secondary: #8b5e3c;
-  --md-secondary-container: #ffdcc1;
+### ⚠️ Color tokens — DEPRECATED here
 
-  /* Tertiary - ירוק (אישורים, success) */
-  --md-tertiary: #006c47;
-  --md-tertiary-container: #8df8c2;
-
-  /* Error */
-  --md-error: #ba1a1a;
-  --md-error-container: #ffdad6;
-
-  /* Surface */
-  --md-surface: #fdfbff;
-  --md-surface-variant: #e1e2ec;
-  --md-on-surface: #1a1c1e;
-}
-```
+ה-tokens המלאים והעדכניים נמצאים ב-[`designs/DESIGN-SYSTEM.md`](../../designs/DESIGN-SYSTEM.md) §2. **אל תשתמש בערכים שמופיעים בגרסאות ישנות של הסוכן הזה** (e.g. `#1976d2` כחול). השתמש תמיד ב-`var(--md-*)` כפי שמוגדרים שם.
 
 ### Typography (Heebo)
 | Level | Size | Weight | Usage |

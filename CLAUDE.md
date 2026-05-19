@@ -18,7 +18,7 @@ agents/00-orchestrator.md
 
 - **`agents/00-orchestrator.md`** — ראש הצוות, מתזמן את כולם
 - **`agents/README.md`** — תיאור מלא של ה-DNA + ארכיטקטורת 3 השכבות
-- **`agents/disciplines/`** — 11 מומחים טכנולוגיים (Frontend, Backend, Mobile, Data-Analytics, Integrations, AI/ML, DevOps, QA, Security, Code-Reviewer, Docs-Keeper)
+- **`agents/disciplines/`** — 12 מומחים טכנולוגיים (Frontend, Backend, Mobile, Data-Analytics, Integrations, AI/ML, DevOps, **QA**, **QA-Automation**, Security, Code-Reviewer, Docs-Keeper) — **qa-automation** מבצע בדיקות runtime אוטומטיות (Preview + Supabase logs + Vercel logs) במקום שירין יבדוק ידנית
 - **`agents/domain-experts/`** — 6 מומחי תוכן (Pet-Nutrition, Hebrew-RTL, Israeli-Logistics, SaaS-Billing, Conversational-Designer, Legal-Compliance)
 - **`agents/product/`** — Product Manager + UX Designer
 - **`agents/workflows/`** — תרחישים מוכנים (feature-development, bug-fix, sprint-planning)
@@ -54,6 +54,22 @@ node -e "const d=JSON.parse(require('fs').readFileSync('pet_platform_tree.excali
 - אל תכתוב טקסט ללקוח (WhatsApp/SMS/Email) בלי `hebrew-rtl-expert` + `conversational-designer`
 - אל תבצע merge ל-main בלי `code-reviewer`
 - אל תיגע ב-billing/payments בלי `saas-billing-expert` + `security-engineer` + `legal-compliance-expert`
+- אל תעצב מסך / תעדכן עיצוב בלי `agents/workflows/design-screen.md` + `designs/DESIGN-SYSTEM.md`
+- **אל תבקש מירין לבדוק ידנית** אחרי deploy / שינוי auth / migration / שינוי UI משמעותי. במקום זה — הצע ב-CTA קצר את [`qa-automation`](agents/disciplines/qa-automation.md) (לפי הטריגרים ב-`00-orchestrator.md` §QA Automation). הסוכן עצמו רץ רק באישור מפורש — אתה רק מציע
+
+## Trigger keywords לעיצוב (חובה)
+
+כשהמשתמש כותב אחד מהביטויים הבאים בתחילת שיחה או בתוכה:
+**"בוא נעצב"**, **"בוא נתחיל לעצב"**, **"תעצב לי"**, **"מסך חדש"**, **"עדכון עיצוב"**, **"תעדכן את העיצוב"**
+
+→ **הפעל מיד את [`agents/workflows/design-screen.md`](agents/workflows/design-screen.md)**, שעושה את הדברים הבאים בסדר הזה:
+1. קורא את `designs/DESIGN-SYSTEM.md` (Source of Truth עיצובי)
+2. סורק את `designs/` כדי לדעת מה כבר קיים
+3. מסווג: מסך חדש / עדכון לקיים / דו-משמעי
+4. אם עדכון — עושה snapshot ב-git לפני מחיקה, ואז יוצר מחדש (אופציה C)
+5. משתמש ב-`designs/PROMPT-TEMPLATE.md` כשלד
+
+אל תתחיל לעצב לפני שקראת את ה-workflow.
 
 ## פתיחת שיחה — בדיקת משימות פתוחות (חובה)
 

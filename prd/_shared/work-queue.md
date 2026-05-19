@@ -2,7 +2,7 @@
 
 > **לקריאה ראשונה בכל סשן חדש.** הקובץ הזה מתאר איפה אנחנו, מה נעשה, ומה הצעד הבא.
 >
-> **עדכון אחרון:** 2026-05-19 — סיור מודולים מלא, כל ההחלטות מעודכנות
+> **עדכון אחרון:** 2026-05-19 — הוספת דרישות לקוח חיצוני (ירין אתר בוס) — מודולים 16-19 חדשים + עדכון מודולים 6,10,12,15
 
 ---
 
@@ -34,6 +34,12 @@
 ### סיור מודולים (2026-05-19)
 - [x] סיור מלא על כל 15 המודולים — כל ההחלטות תועדו ועודכנו ב-feature-tree.md v6
 
+### דרישות לקוח חיצוני (2026-05-19)
+- [x] ניתוח מסמך "ירין אתר בוס" — 20 דרישות ממופות מול העץ הקיים
+- [x] מיפוי: 9 קיים ✅ / 5 מורחב 🔄 / 6 חדש לגמרי ❌
+- [x] עדכון feature-tree.md → v7 (מודולים 6,10,12,15 + מודולים 16-19 חדשים)
+- [x] עדכון pet_platform_tree.excalidraw — 76 אלמנטים חדשים + עדכון מודול 6
+
 ---
 
 ---
@@ -54,23 +60,31 @@
 | 6 | **Notification + Rule Engine** | Green API/SMS/Email, templates, If/Then | #1, #2, #5 | 5-6 | כולל אוטומציות שיווק (preset + custom) |
 | 7 | **Loyalty Engine** | נקודות/קרדיט, הנחת מנוי — הכל configurable | #1, #2, #5 | 5-6 | בעל עסק שולט בכל פיצ'ר בנפרד |
 | 8 | **שליחים (Couriers)** | MVP-A: PWA+Waze / MVP-B: מפה+GPS+מסלול | #1, #5 | 3-4 (A), 5-6 (B) | מפוצל לשני שלבים |
-| 9 | **Dashboards לפי תפקיד** | 4 תבניות קבועות, KPIs, Action-first | #1, #5 | 7-8 | |
+| 9 | **Dashboards לפי תפקיד** | 4 תבניות קבועות, KPIs, Action-first, גרפים (לקוחות חדשים/קניות/רווח) | #1, #5 | 7-8 | |
 | 10 | **Billing SaaS (פנימי)** | Tiers, Trial, PayPlus, דשבורד super_admin | #1 | 7-8 | מחירים ייקבעו לפני השקה |
 | 11 | **הדרכת משתמשים + מרכז עזרה** | Tooltips, Walkthroughs, Knowledge Base, Zoom | #1, #9 | 7-8 | שם קודם: "Onboarding + Help Center" |
-| 12 | **אינטגרציות חיצוניות** | Green API, WooCommerce Plugin B, PayPlus, Morning | #1, #3, #4 | 5-6 | ארכיטקטורה פתוחה לספקי חשבוניות נוספים |
+| 12 | **אינטגרציות חיצוניות** | Green API, WooCommerce Plugin B, PayPlus + אשראי שמור, Morning | #1, #3, #4 | 5-6 | ארכיטקטורה פתוחה לספקי חשבוניות נוספים |
 | 13 | **Order Routing Engine** | שיבוץ ידני + סינון לפי סניף | #1, #5, #8 | 5-6 | |
+| 14 | **מנוע אזילה ידני** | ספירה לאחור, מינוס ימים, כרטסת מאחרים, איפוס בהזמנה | #1, #2, #6 | 7-8 | חדש מדרישות לקוח — MVP |
+| 15 | **אשראי לקוחות** | חוב/זכות, שוטף 30/60, דוח חייבים/זכות | #1, #5 | 7-8 | חדש מדרישות לקוח — B2C+B2B |
+| 16 | **רווחיות ומכירות** | אחוז רווח פר מכירה, מחשבון רווח, דוח עובד, העברת סחורה | #1, #3, #10 | 7-8 | חדש מדרישות לקוח |
+| 17 | **ניהול עובדים** | שעון נוכחות כניסה/יציאה | #1 | 7-8 | חדש מדרישות לקוח |
 
 ### Phase 2 — Sprint 9-16
 
 | # | PRD | מודול |
 |---|---|---|
-| 14 | React Native Courier App + GPS מלא | |
-| 15 | Role Builder + Customizable Dashboards (A+B) | |
-| 16 | AI + Prediction Engine (חיזוי אזילה, ML, Churn) | |
-| 17 | Cross-sell + Win-back + Loyalty Tiers + Referral | |
-| 18 | WhatsApp Cloud API (רשמי Meta) | |
-| 19 | Grow Marketplace Integration (לאמת יכולות) | |
-| 20 | Marketplaces (Wolt/Bring) | |
+| 18 | React Native Courier App + GPS מלא | |
+| 19 | Role Builder + Customizable Dashboards (A+B) | |
+| 20 | מסך Analytics/BI — גרפים מתקדמים + סינון | חדש מדרישות לקוח |
+| 21 | AI + Prediction Engine (ML אזילה, Churn) | הרחבה של מנוע אזילה ידני מ-MVP |
+| 22 | Cross-sell + Win-back + Loyalty Tiers + Referral | |
+| 23 | WhatsApp Cloud API (רשמי Meta) | |
+| 24 | Grow Marketplace Integration (לאמת יכולות) | |
+| 25 | Marketplaces (Wolt/Bring) | |
+| 26 | קטלוג ספקים + קליטת חשבוניות ספקים | חדש מדרישות לקוח |
+| 27 | הנהלת חשבונות פנימית (הכנסות/הוצאות/כרטסת/P&L) | חדש מדרישות לקוח |
+| 28 | Remote Support (Super Admin + מנהל→עובד) | חדש מדרישות לקוח |
 
 ### Phase 3 — Sprint 17-24
 

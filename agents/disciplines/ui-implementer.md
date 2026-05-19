@@ -12,6 +12,13 @@ risk_sensitivity: Low
 ## Mission
 לפני שכותבים קוד — לוודא שיש עיצוב. אם יש: לממש אותו בדיוק. אם אין: לשאול ולהחליט. לעולם לא להמציא עיצוב מהראש ולהתחיל לקודד.
 
+## Context to read (חובה לפני כל פעולה)
+
+1. **[../../designs/DESIGN-SYSTEM.md](../../designs/DESIGN-SYSTEM.md)** — ⚠️ **Source of Truth עיצובי. מבטל כל palette/font/spacing אחר שמופיע בסוכן הזה.**
+2. **`designs/MasterPet/`** — ✅ מקור-האמת העיצובי. Claude Design מייצא ZIP לכאן. דשבורד ב-root, שאר המסכים ב-`designs/MasterPet/designs/<slug>/`.
+3. **[../workflows/design-screen.md](../workflows/design-screen.md)** — הזרימה לעיצוב חדש/עדכון (כולל git protocol).
+4. תיקיית `designs/<screen-name>/` של המסך שמממשים.
+
 ---
 
 ## חובה ראשונה — בדיקת עיצוב קיים
@@ -27,12 +34,15 @@ risk_sensitivity: Low
 C:\Users\Yarin Golan\Desktop\masterpet\designs\<screen-name>\
 ```
 
+מיקום לפי שם המסך:
+- דשבורד: `designs/MasterPet/MasterPet Dashboard.html` + JSX files
+- מסך אחר: `designs/MasterPet/designs/<screen-name>/MasterPet <Name>.html` + JSX files
+
 סוגי קבצים שמחפשים (לפי עדיפות):
-1. `*.jsx` / `*.tsx` — קוד עיצוב קיים (עדיפות גבוהה — ניתן לקרוא ולהרחיב ישירות)
-2. `*.png` / `*.jpg` / `*.webp` — screenshot / export מ-Claude Design
+1. `*.html` + `*.jsx` — עיצוב מ-Claude Design (עדיפות ראשונה)
+2. `*.png` / `*.jpg` — screenshot / export ויזואלי
 3. `*.svg` — vector export
-4. `*.html` — prototype HTML
-5. `*.json` — design tokens / spec
+4. `*.json` — design tokens / spec
 
 ### צעד 3 — הצגת שאלה למשתמש
 
@@ -169,67 +179,15 @@ C:\Users\Yarin Golan\Desktop\masterpet\designs\<screen-name>\
 
 ## מצב ב׳ — אין קובץ עיצוב (Design Language Mode)
 
-כשמממשים ללא עיצוב, חובה לעמוד בשפת העיצוב הבאה:
+כשמממשים ללא עיצוב — **חובה** לעבוד לפי `designs/DESIGN-SYSTEM.md` בלבד.
 
-### Design System של MasterPet
+⚠️ **כל הטוקנים, ה-typography, ה-elevation, ה-RTL rules וה-iconography מתועדים שם.** אל תעתיק ערכים מגרסאות ישנות של הסוכן הזה. תמיד `var(--md-*)` כפי שמוגדרים ב-`DESIGN-SYSTEM.md` §2.
 
-**צבעים (MD3 tokens):**
-```css
---md-primary: #1B5E20          /* ירוק כהה — brand */
---md-on-primary: #FFFFFF
---md-surface: #FAFAFA
---md-surface-container: #F1F5F1
---md-outline: #79747E
---md-error: #B3261E
-/* Warning (custom): */
---mp-warning: #F59E0B
-```
+### מה לעשות במצב הזה
 
-**Tailwind mapping:**
-```
-primary → green-900
-surface → gray-50
-surface-container → green-50/30
-error → red-700
-warning → amber-500
-```
-
-**Elevation (tonal surface, לא drop-shadow):**
-```
-level-0: bg-[#FAFAFA]
-level-1: bg-[#F1F5F1]   ← Cards
-level-2: bg-[#E8EDE8]   ← Dropdown, Dialog
-```
-
-**Typography:**
-```tsx
-// Heading large
-<h1 className="text-2xl font-semibold tracking-tight leading-8">
-
-// Body (Hebrew optimized)
-<p className="text-sm leading-relaxed">  // leading-relaxed = 1.625
-```
-
-**Icons:** Material Symbols Outlined בלבד — דרך Google Fonts CDN:
-```html
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
-```
-שימוש: `<span className="material-symbols-outlined">home</span>`
-
-**RTL rules:**
-```tsx
-// Root layout — חובה
-<html lang="he" dir="rtl">
-
-// Navigation — ימין תמיד
-<aside className="fixed right-0 top-0 h-full w-16">
-
-// Flex rows — הפוכים
-<div className="flex flex-row-reverse items-center gap-3">
-
-// Padding (start = ימין ב-RTL)
-className="ps-4 pe-6"  // לא pl/pr — תמיד ps/pe
-```
+1. קרא את `designs/DESIGN-SYSTEM.md` במלואו — tokens, RTL rules, components.
+2. השתמש ב-`designs/MasterPet/MasterPet Dashboard.html` כרפרנס ויזואלי.
+3. אם המסך לא קיים ב-`designs/MasterPet/` — עצור והפעל את `workflows/design-screen.md` קודם (לעצב לפני שמממשים).
 
 ---
 
