@@ -1,4 +1,8 @@
+import { headers } from "next/headers";
 import { confirmAction } from "./actions";
+import { SubmitButton } from "./submit-button";
+
+export const dynamic = "force-dynamic";
 
 type Props = {
   searchParams: Promise<{
@@ -9,6 +13,10 @@ type Props = {
 };
 
 export default async function ConfirmPage({ searchParams }: Props) {
+  // Disable back-forward cache so a stale token never resurfaces.
+  const h = await headers();
+  void h;
+
   const params = await searchParams;
   const { token_hash, type, invitation_token } = params;
 
@@ -48,12 +56,7 @@ export default async function ConfirmPage({ searchParams }: Props) {
               value={invitation_token}
             />
           )}
-          <button
-            type="submit"
-            className="w-full px-6 py-3 bg-green-700 hover:bg-green-800 text-white rounded-lg font-medium"
-          >
-            המשך לחשבון
-          </button>
+          <SubmitButton />
         </form>
       </div>
     </main>
