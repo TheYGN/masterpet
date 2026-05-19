@@ -3,8 +3,8 @@
 > **קובץ חי.** כל PRD מעדכן את הקובץ הזה. כל טבלה חדשה, כל שדה חדש — מתועד פה.
 > **חוק זהב:** כל טבלה (חוץ מ-`tenants`) חייבת `tenant_id UUID NOT NULL` + RLS policy.
 
-**עדכון אחרון:** 2026-05-19
-**מקור הגדרה אחרון:** PRD: Auth + RBAC (`prd/01-auth-rbac.md`)
+**עדכון אחרון:** 2026-05-19 (נוסף `trial_status` ב-`tenants`)
+**מקור הגדרה אחרון:** PRD: Auth + RBAC (`prd/01-auth-rbac.md`) — סטטוס: Approved
 
 ---
 
@@ -36,6 +36,7 @@ auth.users (Supabase) (1) ─── (1) users.auth_user_id
 | `status` | TEXT NOT NULL | `pending_approval` / `active` / `suspended` / `cancelled` |
 | `plan` | TEXT | `trial` / `basic` / `pro` / `enterprise` |
 | `trial_ends_at` | TIMESTAMPTZ | מתי הטרייאל מסתיים |
+| `trial_status` | TEXT | `active` / `grace_period` / `read_only` / `expired` — מצב הטרייאל. cron יומי מעדכן (PRD #10) |
 | `approved_at` | TIMESTAMPTZ | מתי MasterPet אישר ידנית |
 | `approved_by` | UUID | FK לאדמין שאישר (super_admin) |
 | `created_at` | TIMESTAMPTZ NOT NULL | |
@@ -135,6 +136,14 @@ pending_approval — נרשם, ממתין לאישור ידני של MasterPet
 active           — פעיל
 suspended        — מושעה (אי-תשלום וכד')
 cancelled        — בוטל
+```
+
+### `trial_status`
+```
+active        — Trial רגיל, גישה מלאה
+grace_period  — 3 ימים אחרי trial_ends_at (גישה מלאה + באנר חזק)
+read_only     — פעולות חדשות חסומות, צפייה מותרת
+expired       — חסום לחלוטין (P2+ — כרגע read_only מספיק)
 ```
 
 ### `invitation_status`

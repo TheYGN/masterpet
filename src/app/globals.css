@@ -4,6 +4,52 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ============ MD3 design tokens — MasterPet (seed #1B5E20) ============ */
+:root {
+  --md-primary: #1B5E20;
+  --md-on-primary: #FFFFFF;
+  --md-primary-container: #B7F0BB;
+  --md-on-primary-container: #002106;
+
+  --md-secondary: #52634F;
+  --md-on-secondary: #FFFFFF;
+  --md-secondary-container: #D5E8CF;
+  --md-on-secondary-container: #101F10;
+
+  --md-tertiary: #38656A;
+  --md-on-tertiary: #FFFFFF;
+  --md-tertiary-container: #BCEBF1;
+  --md-on-tertiary-container: #002022;
+
+  --md-error: #B3261E;
+  --md-on-error: #FFFFFF;
+  --md-error-container: #F9DEDC;
+  --md-on-error-container: #410E0B;
+
+  --md-warning: #F59E0B;
+  --md-on-warning: #FFFFFF;
+  --md-warning-container: #FEF3C7;
+  --md-on-warning-container: #4A2F00;
+
+  --md-surface: #FAFAFA;
+  --md-surface-dim: #DBDFD7;
+  --md-surface-bright: #FAFDF5;
+  --md-surface-container-lowest: #FFFFFF;
+  --md-surface-container-low: #F5F7F1;
+  --md-surface-container: #EFF2EC;
+  --md-surface-container-high: #E9ECE6;
+  --md-surface-container-highest: #E4E7E1;
+
+  --md-on-surface: #191D17;
+  --md-on-surface-variant: #43483F;
+  --md-outline: #73796F;
+  --md-outline-variant: #C3C8BC;
+
+  --shadow-1: 0 1px 2px 0 rgba(0,0,0,0.04), 0 1px 3px 1px rgba(0,0,0,0.04);
+  --shadow-2: 0 1px 2px 0 rgba(0,0,0,0.06), 0 2px 6px 2px rgba(0,0,0,0.06);
+  --shadow-3: 0 4px 8px 0 rgba(0,0,0,0.08), 0 8px 24px 4px rgba(0,0,0,0.06);
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

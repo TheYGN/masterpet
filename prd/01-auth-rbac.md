@@ -1,12 +1,11 @@
-# PRD: Auth + RBAC + 4 רולות + Onboarding
+# PRD: Auth + RBAC + קליטת עסק
 
 **פאזה:** MVP (Sprint 1-2)
-**תאריך:** 2026-05-19
-**סטטוס:** Draft
+**תאריך:** 2026-05-19 (עודכן 2026-05-19)
+**סטטוס:** ✅ Approved — סכמה עודכנה 2026-05-19 (branches + permissions)
 **תלוי ב:** —
 **חוסם:** כל שאר PRDs (זהו הבסיס)
 
----
 
 ## 1. סקירה כללית
 
@@ -154,12 +153,30 @@ CREATE TABLE tenants (
   plan            TEXT        DEFAULT 'trial'
                   CHECK (plan IN ('trial','basic','pro','enterprise')),
   trial_ends_at   TIMESTAMPTZ,
+  trial_status    TEXT        DEFAULT 'active'
+                  CHECK (trial_status IN ('active','grace_period','read_only','expired')),
+  -- active: trial רגיל. grace_period: 3 ימים אחרי trial_ends_at. read_only: אחרי grace. expired: חסום לחלוטין (P2+).
   approved_at     TIMESTAMPTZ,
   approved_by     UUID,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX idx_tenants_status ON tenants(status);
+
+-- ============== branches ==============
+CREATE TABLE branches (
+  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id       UUID        NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  name            TEXT        NOT NULL,
+  slug            TEXT        NOT NULL,
+  address         TEXT,
+  phone           TEXT,
+  is_active       BOOLEAN     NOT NULL DEFAULT true,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(tenant_id, slug)
+);
+CREATE INDEX idx_branches_tenant ON branches(tenant_id);
 
 -- ============== users ==============
 CREATE TABLE users (
@@ -171,7 +188,7 @@ CREATE TABLE users (
   full_name       TEXT        NOT NULL,
   role            TEXT        NOT NULL
                   CHECK (role IN ('owner','branch_manager','sales','warehouse','super_admin')),
-  branch_id       UUID,  -- FK ל-branches יתווסף ב-Phase 1.5
+  branch_id       UUID        REFERENCES branches(id) ON DELETE SET NULL,
   status          TEXT        NOT NULL DEFAULT 'active'
                   CHECK (status IN ('active','inactive','pending_invitation')),
   last_login_at   TIMESTAMPTZ,
@@ -189,6 +206,7 @@ CREATE TABLE invitations (
   phone           TEXT,
   full_name       TEXT        NOT NULL,
   role            TEXT        NOT NULL CHECK (role IN ('owner','branch_manager','sales','warehouse')),
+  branch_id       UUID        REFERENCES branches(id) ON DELETE SET NULL,
   channel         TEXT        NOT NULL CHECK (channel IN ('email','whatsapp','both')),
   token           TEXT        UNIQUE NOT NULL,
   status          TEXT        NOT NULL DEFAULT 'pending'
@@ -218,36 +236,114 @@ CREATE TABLE audit_logs (
 );
 CREATE INDEX idx_audit_tenant_created ON audit_logs(tenant_id, created_at DESC);
 CREATE INDEX idx_audit_actor ON audit_logs(actor_user_id, created_at DESC);
+
+-- ============== permissions ==============
+-- tenant_id = NULL → default system permission (applies to all tenants)
+-- tenant_id = X   → per-tenant override (Phase 2: Role Builder)
+CREATE TABLE permissions (
+  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id       UUID        REFERENCES tenants(id) ON DELETE CASCADE,
+  role            TEXT        NOT NULL,
+  resource        TEXT        NOT NULL,
+  -- resources: orders | inventory | customers | users | audit | billing | settings | couriers
+  action          TEXT        NOT NULL,
+  -- actions: read | write | delete | invite | manage
+  is_allowed      BOOLEAN     NOT NULL DEFAULT true,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(tenant_id, role, resource, action)
+);
+CREATE INDEX idx_permissions_tenant_role ON permissions(tenant_id, role);
+
+-- ============== seed: system defaults (MVP — 4 fixed roles) ==============
+INSERT INTO permissions (tenant_id, role, resource, action) VALUES
+  -- owner: כל גישה לכל דבר
+  (NULL, 'owner', '*', '*'),
+  -- branch_manager: הזמנות + מלאי + לקוחות + עובדים בסניף שלו
+  (NULL, 'branch_manager', 'orders',    'read'),
+  (NULL, 'branch_manager', 'orders',    'write'),
+  (NULL, 'branch_manager', 'inventory', 'read'),
+  (NULL, 'branch_manager', 'inventory', 'write'),
+  (NULL, 'branch_manager', 'customers', 'read'),
+  (NULL, 'branch_manager', 'customers', 'write'),
+  (NULL, 'branch_manager', 'users',     'read'),
+  (NULL, 'branch_manager', 'users',     'invite'),
+  (NULL, 'branch_manager', 'couriers',  'read'),
+  (NULL, 'branch_manager', 'couriers',  'write'),
+  -- sales: הזמנות + לקוחות בלבד
+  (NULL, 'sales', 'orders',    'read'),
+  (NULL, 'sales', 'orders',    'write'),
+  (NULL, 'sales', 'customers', 'read'),
+  (NULL, 'sales', 'customers', 'write'),
+  -- warehouse: הזמנות (קריאה) + מלאי + שליחים
+  (NULL, 'warehouse', 'orders',    'read'),
+  (NULL, 'warehouse', 'inventory', 'read'),
+  (NULL, 'warehouse', 'inventory', 'write'),
+  (NULL, 'warehouse', 'couriers',  'read'),
+  (NULL, 'warehouse', 'couriers',  'write');
 ```
 
 ### RLS Policies
 
 ```sql
 ALTER TABLE tenants     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE branches    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE users       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE invitations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_logs  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE permissions ENABLE ROW LEVEL SECURITY;
 
 -- helper: get tenant_id from JWT
-CREATE OR REPLACE FUNCTION auth.current_tenant_id() RETURNS UUID AS $$
+-- NOTE: נוצר ב-public schema (לא auth) — Supabase חוסם כתיבה ל-auth schema
+CREATE OR REPLACE FUNCTION public.current_tenant_id() RETURNS UUID AS $$
   SELECT NULLIF(auth.jwt() ->> 'tenant_id', '')::UUID;
 $$ LANGUAGE SQL STABLE;
 
 -- helper: get role from JWT
-CREATE OR REPLACE FUNCTION auth.current_role() RETURNS TEXT AS $$
+CREATE OR REPLACE FUNCTION public.current_user_role() RETURNS TEXT AS $$
   SELECT auth.jwt() ->> 'role';
+$$ LANGUAGE SQL STABLE;
+
+-- helper: get branch_id from JWT
+CREATE OR REPLACE FUNCTION public.current_branch_id() RETURNS UUID AS $$
+  SELECT NULLIF(auth.jwt() ->> 'branch_id', '')::UUID;
 $$ LANGUAGE SQL STABLE;
 
 -- tenants: super_admin רואה הכל. אחרים — רק את ה-tenant שלהם
 CREATE POLICY tenants_select ON tenants FOR SELECT
-  USING (auth.current_role() = 'super_admin' OR id = auth.current_tenant_id());
+  USING (public.current_user_role() = 'super_admin' OR id = public.current_tenant_id());
 CREATE POLICY tenants_update ON tenants FOR UPDATE
   USING (auth.current_role() = 'super_admin'
          OR (id = auth.current_tenant_id() AND auth.current_role() = 'owner'));
 
--- users: רואה רק users של ה-tenant שלו
+-- branches: owner + super_admin רואים כל הסניפים; branch_manager/sales/warehouse — רק הסניף שלהם
+CREATE POLICY branches_select ON branches FOR SELECT
+  USING (
+    auth.current_role() = 'super_admin'
+    OR (tenant_id = auth.current_tenant_id()
+        AND (auth.current_role() = 'owner' OR id = auth.current_branch_id()))
+  );
+CREATE POLICY branches_insert ON branches FOR INSERT
+  WITH CHECK (tenant_id = auth.current_tenant_id() AND auth.current_role() = 'owner');
+CREATE POLICY branches_update ON branches FOR UPDATE
+  USING (tenant_id = auth.current_tenant_id() AND auth.current_role() = 'owner');
+
+-- permissions: קריאה לכולם ב-tenant; כתיבה לowner בלבד (Phase 2: Role Builder)
+CREATE POLICY permissions_select ON permissions FOR SELECT
+  USING (tenant_id IS NULL OR tenant_id = auth.current_tenant_id() OR auth.current_role() = 'super_admin');
+CREATE POLICY permissions_insert ON permissions FOR INSERT
+  WITH CHECK (tenant_id = auth.current_tenant_id() AND auth.current_role() = 'owner');
+CREATE POLICY permissions_update ON permissions FOR UPDATE
+  USING (tenant_id = auth.current_tenant_id() AND auth.current_role() = 'owner');
+
+-- users: owner רואה כל הסניפים; branch_manager/sales/warehouse — רק הסניף שלהם
 CREATE POLICY users_select ON users FOR SELECT
-  USING (tenant_id = auth.current_tenant_id() OR auth.current_role() = 'super_admin');
+  USING (
+    auth.current_role() = 'super_admin'
+    OR (tenant_id = auth.current_tenant_id()
+        AND (auth.current_role() = 'owner'
+             OR branch_id = auth.current_branch_id()
+             OR id = (SELECT id FROM users WHERE auth_user_id = auth.uid())))
+  );
 CREATE POLICY users_insert ON users FOR INSERT
   WITH CHECK (tenant_id = auth.current_tenant_id()
               AND auth.current_role() IN ('owner','branch_manager'));
@@ -279,7 +375,7 @@ export default async (event) => {
   const { user_id } = event;
   const { data: profile } = await supabase
     .from('users')
-    .select('tenant_id, role')
+    .select('tenant_id, role, branch_id')
     .eq('auth_user_id', user_id)
     .single();
 
@@ -287,7 +383,8 @@ export default async (event) => {
     claims: {
       ...event.claims,
       tenant_id: profile?.tenant_id ?? null,
-      role: profile?.role ?? null,
+      role:      profile?.role      ?? null,
+      branch_id: profile?.branch_id ?? null,
     },
   };
 };
@@ -315,18 +412,48 @@ export default async (event) => {
 | `InviteUserSheet` | `app/(dashboard)/settings/users/components/invite-user-sheet.tsx` | פאנל הזמנת משתמש |
 | `AuditLogTable` | `app/(dashboard)/settings/audit/components/audit-table.tsx` | יומן ביקורת |
 | `PendingTenantsTable` | `app/(super-admin)/tenants/components/pending-table.tsx` | רשימת tenants לאישור |
-| `AuthMiddleware` | `middleware.ts` | בדיקת session + role לכל route |
+| `AuthProxy` | `src/proxy.ts` | הפניות UI בלבד (optimistic) — אבטחה אמיתית ב-DAL |
+| `verifySession` | `src/app/lib/dal.ts` | DAL — בדיקת session + role בכל Server Action/Component |
 
-### Middleware (Next.js)
+### Next.js 16 — שינויים שמשפיעים על Auth (Breaking Changes)
+
+> **⚠️ Next.js 16 שינה את ה-middleware לחלוטין.** כל קוד שנכתב לפי Next.js 14/15 ישבר.
+
+| # | מה השתנה | Next.js 14/15 | Next.js 16 |
+|---|---|---|---|
+| 1 | שם הקובץ | `middleware.ts` | **`proxy.ts`** |
+| 2 | שם הפונקציה | `export function middleware()` | **`export function proxy()`** |
+| 3 | `cookies()` | סינכרוני | **חובה `await cookies()`** |
+| 4 | הגנת routes | אפשר לסמוך על middleware | Proxy = UI בלבד; **חובה DAL בכל Server Action** |
+| 5 | Layout auth | עבד | **Layouts לא מרנדרים מחדש בניווט — auth בתוך leaf components בלבד** |
+
+### Proxy (Next.js 16) — src/proxy.ts
 
 ```typescript
-// middleware.ts
-// בדיקה: יש session? יש tenant_id? הרול מתאים ל-route?
+// src/proxy.ts — הפניות UI בלבד, לא אמצעי אבטחה עצמאי
 // route patterns:
-//   /super-admin/* → role === 'super_admin'
-//   /settings/audit/* → role === 'owner'
+//   /super-admin/* → role === 'super_admin'             (redirect אם לא)
+//   /settings/audit/* → role === 'owner'                (redirect אם לא)
 //   /settings/users/* → role IN ('owner','branch_manager')
 //   /(dashboard)/* → tenant.status === 'active'
+// JWT claims נגישים: tenant_id | role | branch_id
+// branch isolation: RLS אוכפת אוטומטית לפי branch_id ב-JWT
+// / (root) → redirect('/login') לא-מחוברים. דף נחיתה שיווקי = Post-MVP (PRD נפרד).
+// אבטחה אמיתית: verifySession() בתוך כל Server Action ו-Server Component
+```
+
+### DAL — src/app/lib/dal.ts
+
+```typescript
+// src/app/lib/dal.ts
+import 'server-only'
+import { cache } from 'react'
+import { cookies } from 'next/headers'
+
+export const verifySession = cache(async () => {
+  const cookieStore = await cookies() // חובה await ב-Next.js 16
+  // ... decrypt + validate
+})
 ```
 
 ---
@@ -394,18 +521,20 @@ export default async (event) => {
 
 ---
 
-## 10. סיכונים ושאלות פתוחות
+## 10. החלטות שנסגרו (לשעבר: שאלות פתוחות)
+
+> כל השאלות נסגרו ב-2026-05-19. ה-PRD מוכן לפיתוח.
 
 | # | שאלה / סיכון | סטטוס | החלטה |
 |---|---|---|---|
-| 1 | האם נשתמש ב-Resend או Supabase Email? | פתוח | להחליט לפני sprint 1 |
-| 2 | מה הטקסט המאושר של WhatsApp template להזמנה? | פתוח | יוגדר ע"י `hebrew-rtl-expert` + `conversational-designer` |
-| 3 | Super admin — כניסה דרך `/admin` נפרד או דרך אותה כניסה? | פתוח | המלצה: subdomain `admin.masterpet.co.il` ב-Phase 2; MVP — route `/super-admin/` באותו דומיין |
-| 4 | אם tenant נדחה — האם נשלח מייל הסבר? | פתוח | כן (UX). טקסט יוגדר ע"י `conversational-designer` |
-| 5 | מה קורה כשטרייאל מסתיים? נחסום או רק נציג באנר? | פתוח | להחליט ב-PRD של Billing |
-| 6 | האם משתמש יכול להיות חבר ביותר מ-tenant אחד? | סגור | **לא ב-MVP.** Phase 2+ — נדרשת טבלת קישור `user_tenants` |
-| 7 | האם להוסיף 2FA ל-`super_admin`? | פתוח | מומלץ ע"י `security-engineer` — דחייה לאחרי MVP |
-| 8 | מה קורה למשתמש מחובר אם ה-tenant שלו suspended? | סגור | logout מיידי + מסך הסבר "החשבון מושעה — צור קשר עם MasterPet" |
+| 1 | Resend או Supabase Email? | ✅ סגור | **Resend.** 3K מיילים/חודש בחינם, deliverability מצוין, RTL טוב. דורש domain verification (`masterpet.co.il`). |
+| 2 | טקסט WhatsApp template להזמנה | ✅ סגור | טון יבש מקצועי, גוף "אתה". ראה סעיף 13. Category=UTILITY לאישור Meta. |
+| 3 | Super admin — route או subdomain? | ✅ סגור | **MVP: route `/super-admin/`** באותו דומיין. **Phase 2+: subdomain** `admin.masterpet.co.il` — מנותק מהלקוחות, מבודד אבטחתית, יותר מאובטח מבחינת CORS/cookies. |
+| 4 | מייל דחייה ל-tenant — לשלוח? איזה טקסט? | ✅ סגור | **כן.** טון חם ואמפתי, ללא הסבר ספציפי לסיבת הדחייה, פתיחות לשיחה. ראה סעיף 13. |
+| 5 | מה קורה בסוף Trial? | ✅ סגור | **באנר 7 ימים לפני** סיום + **grace period 3 ימים** אחרי + **read-only** אחרי. דורש שדה `trial_status` ב-schema (ראה סעיף 6). חיוב בפועל מטופל ב-PRD #10 (Billing). |
+| 6 | האם משתמש יכול להיות חבר ביותר מ-tenant אחד? | ✅ סגור | **לא ב-MVP.** Phase 2+ — נדרשת טבלת קישור `user_tenants` |
+| 7 | 2FA ל-`super_admin`? | ✅ סגור | **דחייה ל-Phase 2.** Magic Link חזק (חד-פעמי, שעה תוקף), מעט super_admins (2-3 פנימיים). אם נגדל — נוסיף TOTP בחינם. |
+| 8 | מה קורה אם tenant suspended? | ✅ סגור | logout מיידי + מסך הסבר "החשבון מושעה — צור קשר עם MasterPet" |
 
 ---
 
@@ -438,3 +567,90 @@ data.exported              — יצוא דאטה (לעתיד)
 - **WhatsApp + Email templates:** `hebrew-rtl-expert` + `conversational-designer`
 - **Code Review:** `code-reviewer` (חובה לפני merge ל-master)
 - **QA:** `qa-engineer` — כל 4 הרולים + RLS isolation
+
+---
+
+## 13. תבניות תוכן מאושרות
+
+> נסגר 2026-05-19. כל טקסט שיופיע למשתמש עובר דרך כאן.
+
+### 13.1 מייל דחיית tenant (`fn-tenant-reject`)
+
+- **Provider:** Resend
+- **From:** `MasterPet <hello@masterpet.co.il>`
+- **Reply-To:** `hello@masterpet.co.il`
+- **Subject:** `ביקשת להצטרף ל-MasterPet — בקשה לעדכון`
+- **Trigger:** super_admin לוחץ "דחה" ב-`/super-admin/tenants/[id]`
+
+**Body (HTML + plain text):**
+
+```
+שלום {{owner_name}},
+
+תודה שפנית אלינו ושיתפת אותנו בעסק שלך, {{business_name}}.
+שמחנו לקרוא על מה שאתם עושים.
+
+לאחר בדיקה, לא נוכל לאשר את הצטרפותך ל-MasterPet בשלב הזה.
+
+אנחנו יודעים שזו לא התשובה שקיווית לקבל, ואנחנו מבינים שזה
+מאכזב. הדלת לא נסגרה — אם תרצה שנבחן את הבקשה שוב בעוד
+כמה חודשים, או אם יש משהו שתרצה לשתף איתנו, אנחנו פה.
+
+מוזמן לכתוב לנו ישירות: hello@masterpet.co.il
+
+מאחלים לך הצלחה,
+צוות MasterPet
+```
+
+**עקרונות עיצוב:**
+- אין הסבר ספציפי לסיבת הדחייה (יוצר ויכוחים מיותרים)
+- "הדלת לא נסגרה" — חם, לא סופי
+- חתימה "צוות MasterPet" (לא "מערכת", לא שם פרטי של super_admin)
+
+### 13.2 WhatsApp template — הזמנת עובד
+
+- **Template name:** `employee_invitation_v1`
+- **Category:** UTILITY (חובה — לא MARKETING, כדי לעבור אישור Meta)
+- **Language:** Hebrew (he)
+- **Trigger:** owner/branch_manager שולחים הזמנה דרך `/settings/users/invite` עם channel ∈ {whatsapp, both}
+
+**Body:**
+
+```
+שלום {{1}},
+
+{{2}} הזמין אותך להצטרף למערכת MasterPet של {{3}}.
+
+לקבלת גישה, לחץ על הקישור:
+{{4}}
+
+הקישור בתוקף ל-7 ימים.
+```
+
+**משתנים (סדר חובה):**
+
+| # | שם | מקור | דוגמה |
+|---|---|---|---|
+| `{{1}}` | שם המוזמן | `invitation.full_name` | "דנה כהן" |
+| `{{2}}` | שם המזמין | `users.full_name` של `invited_by` | "ירין גולן" |
+| `{{3}}` | שם העסק | `tenants.name` | "פטסטור" |
+| `{{4}}` | קישור ההזמנה | `https://masterpet.co.il/invite/{{token}}` | URL מלא |
+
+**הערות לאישור Meta:**
+- Category=UTILITY (קשור לתפקוד מערכת, לא שיווק) → סיכוי גבוה לאישור
+- אין אימוג'י, אין promotion language
+- כל המשתנים נחוצים וברורים
+- "הקישור בתוקף ל-7 ימים" — שקיפות שעוזרת באישור
+
+### 13.3 הודעת באנר — סוף Trial
+
+- **Trigger:** middleware קורא `tenants.trial_ends_at` ו-`tenants.trial_status`
+- **תצוגה:** רכיב `Alert` (shadcn) קבוע בראש כל דף ב-`(dashboard)`
+
+| מצב | כותרת | טקסט | CTA |
+|---|---|---|---|
+| 7 ימים לפני סיום | "תקופת הניסיון מסתיימת בעוד {{days}} ימים" | "המשך להשתמש ללא הפרעה — שדרג עכשיו לתוכנית בתשלום." | "שדרג עכשיו" → `/settings/billing` |
+| 0-3 ימים אחרי (`grace_period`) | "תקופת הניסיון הסתיימה — נשארו {{days}} ימי חסד" | "המערכת עדיין מלאה בפעולה. לאחר {{days}} ימים תעבור למצב צפייה בלבד." | "שדרג עכשיו" → `/settings/billing` |
+| לאחר grace (`read_only`) | "המערכת במצב צפייה בלבד" | "פעולות חדשות חסומות. שדרג לתוכנית בתשלום כדי להמשיך לעבוד." | "שדרג עכשיו" → `/settings/billing` |
+
+**הערה:** המעבר בין `active` → `grace_period` → `read_only` יעובד ע"י cron job יומי (Supabase scheduled function), שינוסח ב-PRD #10 (Billing).

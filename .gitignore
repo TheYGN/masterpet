@@ -36,6 +36,11 @@ yarn-error.log*
 # vercel
 .vercel
 
+# claude / local dev artifacts
+.claude/
+.playwright-mcp/
+/signup-with-turnstile.png
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
