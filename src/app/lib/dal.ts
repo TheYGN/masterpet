@@ -65,18 +65,11 @@ export const verifySession = cache(async (): Promise<Session | null> => {
     }
   )
 
-  const { data: profile, error: profileError } = await supabase
+  const { data: profile } = await supabase
     .from('users')
     .select('id, auth_user_id, tenant_id, email, full_name, role, branch_id, status')
     .eq('auth_user_id', userId)
     .single()
-
-  if (profileError) {
-    console.error('PROFILE_CODE=' + profileError.code)
-    console.error('PROFILE_MSG=' + (profileError.message ?? '').slice(0, 120))
-    console.error('PROFILE_HINT=' + (profileError.hint ?? '').slice(0, 80))
-    console.error('PROFILE_DETAILS=' + (profileError.details ?? '').slice(0, 120))
-  }
 
   if (!profile || profile.status !== 'active') return null
 
