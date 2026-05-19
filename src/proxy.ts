@@ -6,13 +6,16 @@ const PUBLIC_PATHS = [
   '/signup',
   '/403',
   '/auth/callback',
+  '/auth/confirm',
 ]
 
+// Narrowed from '/api/' and '/auth/' — only the explicit public surface is open.
+// '/auth/callback' and '/auth/confirm' are listed individually in PUBLIC_PATHS;
+// any other /auth/ or /api/ route requires authentication.
 const PUBLIC_PREFIXES = [
   '/invite/',
   '/_next/',
-  '/api/',
-  '/auth/',
+  '/api/public/',
 ]
 
 function isPublic(pathname: string): boolean {

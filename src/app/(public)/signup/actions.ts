@@ -76,6 +76,23 @@ export async function signupAction(
     { auth: { persistSession: false } }
   );
 
+  const normalizedEmail = email.trim().toLowerCase();
+
+  // Block duplicate signup requests for the same email — prevents spamming
+  // pending_approval rows with the same contact and confusing super-admin review.
+  const { data: existing } = await supabase
+    .from("tenants")
+    .select("id")
+    .eq("contact_email", normalizedEmail)
+    .limit(1)
+    .maybeSingle();
+
+  if (existing) {
+    return {
+      errors: { email: "כתובת המייל הזו כבר רשומה במערכת. אנא פנו אלינו לקבלת סטטוס." },
+    };
+  }
+
   const slug = generateSlug(businessName);
 
   const { error } = await supabase.from("tenants").insert({
@@ -83,7 +100,7 @@ export async function signupAction(
     slug,
     business_type: businessType || null,
     owner_name: ownerName.trim(),
-    contact_email: email.trim().toLowerCase(),
+    contact_email: normalizedEmail,
     contact_phone: phone.trim(),
     status: "pending_approval",
   });
