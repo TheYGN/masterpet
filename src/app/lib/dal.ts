@@ -49,21 +49,31 @@ export const verifySession = cache(async (): Promise<Session | null> => {
 
   // Build a Supabase client with the JWT pinned as Authorization so RLS sees
   // the authenticated user (current_user_role(), auth.uid()) on the queries
-  // below.
+  // below. apikey must also be set explicitly — overriding global.headers
+  // would otherwise drop the anon-key header Supabase adds by default.
   const supabase = createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       auth: { persistSession: false, autoRefreshToken: false },
-      global: { headers: { Authorization: `Bearer ${jwt}` } },
+      global: {
+        headers: {
+          apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+          Authorization: `Bearer ${jwt}`,
+        },
+      },
     }
   )
 
-  const { data: profile } = await supabase
+  const { data: profile, error: profileError } = await supabase
     .from('users')
     .select('id, auth_user_id, tenant_id, email, full_name, role, branch_id, status')
     .eq('auth_user_id', userId)
     .single()
+
+  if (profileError) {
+    console.error('[verifySession] profile error', { userId, msg: profileError.message, code: profileError.code, details: profileError.details, hint: profileError.hint })
+  }
 
   if (!profile || profile.status !== 'active') return null
 
