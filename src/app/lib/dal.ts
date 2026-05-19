@@ -72,7 +72,10 @@ export const verifySession = cache(async (): Promise<Session | null> => {
     .single()
 
   if (profileError) {
-    console.error('[verifySession] profile error', { userId, msg: profileError.message, code: profileError.code, details: profileError.details, hint: profileError.hint })
+    console.error('PROFILE_CODE=' + profileError.code)
+    console.error('PROFILE_MSG=' + (profileError.message ?? '').slice(0, 120))
+    console.error('PROFILE_HINT=' + (profileError.hint ?? '').slice(0, 80))
+    console.error('PROFILE_DETAILS=' + (profileError.details ?? '').slice(0, 120))
   }
 
   if (!profile || profile.status !== 'active') return null
