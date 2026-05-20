@@ -12,7 +12,12 @@ const SUPABASE_REF = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '')
   .split('.')[0]
 const AUTH_COOKIE_NAME = `sb-${SUPABASE_REF}-auth-token`
 
-async function jwtFromCookies(): Promise<string | null> {
+/**
+ * Internal helper — reads the Supabase auth JWT from cookies.
+ * Exported so other DAL helpers (e.g. `getAuthenticatedClient`) can pin the
+ * caller's JWT onto a fresh supabase-js client. NOT for use outside `src/app/lib`.
+ */
+export async function jwtFromCookies(): Promise<string | null> {
   const store = await cookies()
   const chunks = store
     .getAll()
@@ -120,3 +125,32 @@ export const getUser = cache(async () => {
   const session = await verifySession()
   return session?.profile ?? null
 })
+
+/**
+ * Returns a Supabase client with the user's JWT pinned to the Authorization
+ * header. Use this in Server Actions where RLS must apply — `current_tenant_id()`,
+ * `current_branch_id()`, and `current_user_role()` all evaluate from the JWT.
+ *
+ * Do NOT use `service_role` for normal read/write — that bypasses RLS and is
+ * a security risk. Service role is reserved for super_admin cross-tenant work
+ * and writeAudit (intentional bypass for audit trail).
+ *
+ * Throws if no JWT is present — call `requireSession()` / `requireRole()` first.
+ */
+export async function getAuthenticatedClient() {
+  const jwt = await jwtFromCookies()
+  if (!jwt) throw new Error('No JWT in cookies — call requireSession() first')
+  return createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: {
+        headers: {
+          apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+          Authorization: `Bearer ${jwt}`,
+        },
+      },
+    }
+  )
+}

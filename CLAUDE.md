@@ -4,15 +4,21 @@
 
 לפרויקט הזה יש **צוות סוכנים מובנה** שמתאים את העבודה ל-DNA של MasterPet (SaaS לוגיסטי לעסקי מזון לחיות, ישראל, RTL).
 
+## שם ה-Orchestrator — טרוי
+
+ה-Orchestrator הראשי של הצוות נקרא **טרוי**.
+
+כשהמשתמש פונה אל **"טרוי"** (בתחילת משפט, באמצעו, או בכל צורה כגון: "טרוי, תתחיל", "תשאל את טרוי", "תפעיל את טרוי") — הפעל מיד את `agents/00-orchestrator.md` ופעל לפי הפרוטוקול שלו.
+
 ## איך עובדים עם הצוות
 
-לכל משימה שאינה תיקון של שורה אחת — **קרא קודם את ה-Orchestrator**:
+לכל משימה שאינה תיקון של שורה אחת — **קרא קודם את טרוי (ה-Orchestrator)**:
 
 ```
 agents/00-orchestrator.md
 ```
 
-ה-Orchestrator יבחר את הסוכנים הנכונים לפי 3 שאלות (Phase × Task type × Risk), ויפעיל אותם בסדר הנכון.
+טרוי יבחר את הסוכנים הנכונים לפי 3 שאלות (Phase × Task type × Risk), ויפעיל אותם בסדר הנכון.
 
 ## מבנה הצוות
 
@@ -56,6 +62,20 @@ node -e "const d=JSON.parse(require('fs').readFileSync('pet_platform_tree.excali
 - אל תיגע ב-billing/payments בלי `saas-billing-expert` + `security-engineer` + `legal-compliance-expert`
 - אל תעצב מסך / תעדכן עיצוב בלי `agents/workflows/design-screen.md` + `designs/DESIGN-SYSTEM.md`
 - **אל תבקש מירין לבדוק ידנית** אחרי deploy / שינוי auth / migration / שינוי UI משמעותי. במקום זה — הצע ב-CTA קצר את [`qa-automation`](agents/disciplines/qa-automation.md) (לפי הטריגרים ב-`00-orchestrator.md` §QA Automation). הסוכן עצמו רץ רק באישור מפורש — אתה רק מציע
+
+## Troy Skills — ארגז הכלים של טרוי
+
+לטרוי יש 5 סקילים פעילים בתיקיית `skills/troy-*/SKILL.md`. הפעל כל אחד לפי הטריגרים:
+
+| Skill | קובץ | מתי להפעיל |
+|-------|------|-----------|
+| **troy-intake** | `skills/troy-intake/SKILL.md` | כל משימה חדשה שדורשת תכנון — לפני כל dispatch |
+| **troy-dispatch** | `skills/troy-dispatch/SKILL.md` | אחרי שירין אישר תוכנית — להפעיל סוכנים |
+| **troy-status** | `skills/troy-status/SKILL.md` | "מה הסטטוס?", "איפה אנחנו?", "מה פתוח?", "מה הצעד הבא?" |
+| **troy-handoff** | `skills/troy-handoff/SKILL.md` | אחרי כל סוכן שסיים — לפני שהסוכן הבא מתחיל |
+| **troy-retro** | `skills/troy-retro/SKILL.md` | "סיימנו", "תסכם", סוף workflow משמעותי |
+
+**סדר עבודה תקין:** `troy-intake` → אישור → `troy-dispatch` → (לכל handoff: `troy-handoff`) → `troy-retro`
 
 ## Trigger keywords לעיצוב (חובה)
 

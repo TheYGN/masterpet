@@ -1,12 +1,12 @@
-# עץ האפיון — MasterPet v7
-> עודכן: 2026-05-19 — הוספת דרישות לקוח חיצוני (ירין אתר בוס)
+# עץ האפיון — MasterPet v8
+> עודכן: 2026-05-20 — הוספת מודול 20 (CSV/Excel Import Engine) כתשתית גנרית MVP. **צריך סנכרון ידני ל-`pet_platform_tree.excalidraw`**.
 
 ## מבנה הפאזות
 
 ### MVP (חודשים 1-4)
 Sprint 1-2: Supabase setup, Auth, 4 רולות, קליטת עסק, Branches
-Sprint 3-4: Order Inbox, Orders Management, Inventory, WooCommerce Sync A, Couriers PWA A
-Sprint 5-6: CRM, Pet Profiles, Rule Engine, Loyalty, Notifications, WooCommerce Plugin B, Couriers GPS B
+Sprint 3-4: **Products + CSV Import Engine (יעד ראשון: Products)**, Orders, Inventory, WooCommerce Sync A, Couriers PWA A
+Sprint 5-6: CRM (Customers + שימוש שני ב-Import) + Pet Profiles, Rule Engine, Loyalty, Notifications, **Order Inbox** (אחרי שיש Products+Orders), WooCommerce Plugin B, Couriers GPS B
 Sprint 7-8: Dashboards + גרפים, Internal Billing, מנוע אזילה ידני + כרטסת מאחרים, אשראי לקוחות, רווחיות ומכירות, שעון נוכחות, העברת סחורה בין סניפים, Beta Launch
 
 ### Phase 2 (חודשים 5-8)
@@ -178,6 +178,22 @@ Sprint 23-24: Enterprise Features, White-label, Scale 100+ tenants
 
 ### 18. ניהול עובדים
 - [MVP] שעון נוכחות — כניסה/יציאה (תיעוד בלבד, ללא חישוב שכר)
+
+### 20. CSV/Excel Import Engine (תשתית גנרית)
+> **חדש v8** — מנגנון Mapping גנרי לייבוא נתונים מכל פלטפורמה חיצונית (WooCommerce export, Shopify, Excel של ספק, מערכת ישנה). פעם אחת בונים — N טבלאות משתמשות.
+- [MVP] העלאת קובץ CSV/Excel (xlsx, xls) + parsing
+- [MVP] תצוגת preview של 10 שורות ראשונות + כותרות הקובץ
+- [MVP] **Mapping UI גנרי** — drag-and-drop / select לכל עמודת מקור → עמודת יעד
+- [MVP] שמירת mapping templates (per-tenant) — למנוע מיפוי חוזר בכל ייבוא
+- [MVP] Validation לפי target schema (required, type, enum, unique)
+- [MVP] תצוגת שגיאות ברמת שורה — דלג / תקן / הפסק
+- [MVP] Dry-run mode — מציג מה ייכנס בלי לכתוב ל-DB
+- [MVP] Import history + rollback (per import job)
+- [MVP] **יעד ראשון: Products** (Sprint 3-4)
+- [MVP] **יעד שני: Customers** (Sprint 5-6)
+- [P2] יעד שלישי: Orders (היסטוריה ממערכת ישנה)
+- [P2] AI-assisted mapping suggestions (Claude — לפי שם עמודה)
+- [P2] תזמון ייבוא חוזר (cron) — לסנכרון אוטומטי מ-Google Sheets/URL
 
 ### 19. הנהלת חשבונות פנימית
 - [P2] מעקב הכנסות — כל תשלום מלקוח (הזמנות + קישורי תשלום)

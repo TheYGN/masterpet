@@ -3,8 +3,8 @@
 > **קובץ חי.** כל PRD מעדכן את הקובץ הזה. כל טבלה חדשה, כל שדה חדש — מתועד פה.
 > **חוק זהב:** כל טבלה (חוץ מ-`tenants`) חייבת `tenant_id UUID NOT NULL` + RLS policy.
 
-**עדכון אחרון:** 2026-05-19 (נוסף `trial_status` ב-`tenants`)
-**מקור הגדרה אחרון:** PRD: Auth + RBAC (`prd/01-auth-rbac.md`) — סטטוס: Approved
+**עדכון אחרון:** 2026-05-20 (נוסף מודול Products — 6 טבלאות חדשות + טריגרים אוטומטיים ל-default branch ול-inventory seeding)
+**מקור הגדרה אחרון:** PRD: Products (`prd/03-products.md`) — סטטוס: Schema applied
 
 ---
 
@@ -46,6 +46,30 @@ auth.users (Supabase) (1) ─── (1) users.auth_user_id
 
 ---
 
+### `branches` — סניפים של ה-tenant
+
+| עמודה | סוג | תיאור |
+|---|---|---|
+| `id` | UUID PK | |
+| `tenant_id` | UUID NOT NULL | FK ל-`tenants` ON DELETE CASCADE |
+| `name` | TEXT NOT NULL | שם הסניף (לדוגמה "סניף ראשי", "סניף תל אביב") |
+| `slug` | TEXT NOT NULL | slug לזיהוי. UNIQUE לפי (tenant_id, slug) |
+| `address` | TEXT | כתובת פיזית |
+| `phone` | TEXT | טלפון הסניף (E.164) |
+| `is_active` | BOOLEAN NOT NULL DEFAULT true | סניף פעיל / מושבת |
+| `created_at` | TIMESTAMPTZ NOT NULL | |
+| `updated_at` | TIMESTAMPTZ NOT NULL | |
+
+**נוצר אוטומטית:**
+- בעת אישור טנאנט (`approveTenantAction`) — נוצר branch ראשון בשם הטנאנט עם slug `"main"`.
+- **DB-level trigger** `tenant_create_default_branch` (PRD #3): כל `INSERT` של טנאנט עם `status='active'`, או `UPDATE` של `status` ל-`'active'`, יוצר אוטומטית branch בשם `"סניף ראשי"` (slug `"main"`, `is_active=true`) אם אין כבר. SECURITY DEFINER, `search_path = ''`.
+- **DB-level trigger** `branches_seed_inventory` (PRD #3): כל `INSERT` של branch פעיל יוצר שורות `product_inventory` ריקות (qty=0, reorder_level=0) לכל ה-variants הקיימים בטנאנט.
+
+**RLS:** `owner` ו-`super_admin` רואים כל הסניפים. `branch_manager`, `sales`, `warehouse` — רק הסניף שלהם לפי `branch_id` ב-JWT.
+**מוגדר ב:** PRD #1 ([`prd/01-auth-rbac.md`](../01-auth-rbac.md))
+
+---
+
 ### `users` — המשתמשים בתוך ה-tenant
 
 | עמודה | סוג | תיאור |
@@ -57,7 +81,7 @@ auth.users (Supabase) (1) ─── (1) users.auth_user_id
 | `phone` | TEXT | בפורמט E.164 |
 | `full_name` | TEXT NOT NULL | |
 | `role` | TEXT NOT NULL | `owner` / `branch_manager` / `sales` / `warehouse` / `super_admin` |
-| `branch_id` | UUID | FK ל-`branches` (Phase 2 — לסניפים מרובים). MVP: NULL מותר |
+| `branch_id` | UUID | FK ל-`branches` (MVP). `owner` — NULL מותר (רואה הכל). שאר הרולים (`branch_manager`, `sales`, `warehouse`) — נדרש לצורך RLS isolation. |
 | `status` | TEXT NOT NULL | `active` / `inactive` / `pending_invitation` |
 | `last_login_at` | TIMESTAMPTZ | |
 | `created_at` | TIMESTAMPTZ NOT NULL | |
@@ -112,10 +136,127 @@ auth.users (Supabase) (1) ─── (1) users.auth_user_id
 - `user.role_changed`, `user.deactivated`, `user.reactivated`
 - `tenant.settings_changed`, `tenant.plan_changed`
 - `order.deleted`, `order.refunded`
-- `product.price_changed`
+- `product.created`, `product.updated`, `product.deleted`, `product.duplicated`
+- `product_variant.updated`
+- `product_inventory.updated`
+- `product.price_changed` (legacy — to be deprecated; replaced by `product_variant.updated` with `fields: ['price']`)
 - `data.exported`
 
 **RLS:** `owner` רואה את כל ה-audit של ה-tenant. אחרים — רק פעולות שהם עצמם ביצעו.
+
+---
+
+### `products` — מוצר ראשי בקטלוג
+
+| עמודה | סוג | תיאור |
+|---|---|---|
+| `id` | UUID PK | |
+| `tenant_id` | UUID NOT NULL | FK ל-`tenants` ON DELETE CASCADE |
+| `name` | TEXT NOT NULL | שם המוצר (RTL, עברית) |
+| `description` | TEXT | תיאור חופשי |
+| `image_url` | TEXT | URL לתמונה ראשית (גלריה = P2) |
+| `supplier_name` | TEXT | שם ספק כטקסט חופשי (טבלת `suppliers` נפרדת = P2) |
+| `animal_type` | TEXT NOT NULL | CHECK: `dog` / `cat` / `rodent` / `bird` / `fish` / `reptile` / `other`. ברירת מחדל `other`. |
+| `age_group` | TEXT NOT NULL | CHECK: `puppy` / `adult` / `senior` / `all`. ברירת מחדל `all`. |
+| `diet_type` | TEXT NOT NULL | CHECK: `regular` / `grain_free` / `hypoallergenic` / `super_premium` / `therapeutic`. ברירת מחדל `regular`. |
+| `allergen_free` | TEXT[] NOT NULL | מערך אלרגנים שהמוצר נקי מהם (`chicken`, `beef`, `grain`, ...). ברירת מחדל `'{}'`. |
+| `tags` | TEXT[] NOT NULL | תיוג חופשי per-tenant ("מבצע", "מומלץ"). אינדקס GIN לחיפוש מהיר. |
+| `vat_rate` | NUMERIC(5,2) NOT NULL | אחוז מע"מ. ברירת מחדל `18.00`. תומך גם ב-0% למוצרים פטורים. |
+| `status` | TEXT NOT NULL | CHECK: `active` / `inactive` / `discontinued`. ברירת מחדל `active`. |
+| `deleted_at` | TIMESTAMPTZ | Soft delete — `NULL` = פעיל. RLS מסנן רק `deleted_at IS NULL`. variants ו-inventory נמחקים cascade דרך FK. |
+| `created_at` | TIMESTAMPTZ NOT NULL | |
+| `updated_at` | TIMESTAMPTZ NOT NULL | מתעדכן אוטומטית ע"י טריגר `products_set_updated_at`. |
+
+**RLS:** `products_tenant_isolation` — `tenant_id = current_tenant_id() AND deleted_at IS NULL`. ENABLE + FORCE RLS. service_role עוקף.
+**מוגדר ב:** PRD #3 ([`prd/03-products.md`](../03-products.md))
+
+---
+
+### `product_attributes` — מאפיינים של מוצר ("גודל", "טעם", "גיל")
+
+| עמודה | סוג | תיאור |
+|---|---|---|
+| `id` | UUID PK | |
+| `tenant_id` | UUID NOT NULL | FK ל-`tenants` ON DELETE CASCADE |
+| `product_id` | UUID NOT NULL | FK ל-`products` ON DELETE CASCADE |
+| `name` | TEXT NOT NULL | שם המאפיין (לדוגמה "גודל אריזה") |
+| `position` | INT NOT NULL DEFAULT 0 | מיקום בתצוגה (לסידור attributes לפי סדר) |
+
+**RLS:** `product_attributes_tenant_isolation` — `tenant_id = current_tenant_id()`. ENABLE + FORCE RLS.
+**מוגדר ב:** PRD #3
+
+---
+
+### `product_attribute_values` — ערכים של מאפיין ("1kg", "5kg", "עוף")
+
+| עמודה | סוג | תיאור |
+|---|---|---|
+| `id` | UUID PK | |
+| `tenant_id` | UUID NOT NULL | FK ל-`tenants` ON DELETE CASCADE |
+| `attribute_id` | UUID NOT NULL | FK ל-`product_attributes` ON DELETE CASCADE |
+| `value` | TEXT NOT NULL | הערך עצמו (לדוגמה "5kg", "עוף") |
+| `position` | INT NOT NULL DEFAULT 0 | סדר תצוגה |
+
+**RLS:** `product_attribute_values_tenant_isolation` — `tenant_id = current_tenant_id()`. ENABLE + FORCE RLS.
+**מוגדר ב:** PRD #3
+
+---
+
+### `product_variants` — Variants (כל הצלבת ערכים = SKU עצמאי)
+
+| עמודה | סוג | תיאור |
+|---|---|---|
+| `id` | UUID PK | |
+| `tenant_id` | UUID NOT NULL | FK ל-`tenants` ON DELETE CASCADE |
+| `product_id` | UUID NOT NULL | FK ל-`products` ON DELETE CASCADE |
+| `sku` | TEXT NOT NULL | SKU ייחודי לפי `(tenant_id, sku)`. |
+| `barcode` | TEXT | ברקוד פיזי (EAN13 / UPC). אופציונלי. |
+| `internal_code` | TEXT | מק"ט פנימי של העסק (שונה מ-SKU). אופציונלי. |
+| `price` | NUMERIC(10,2) NOT NULL | מחיר **ללא מע"מ**. CHECK `>= 0`. |
+| `cost_price` | NUMERIC(10,2) | מחיר עלות. **גלוי רק ל-`owner`** — DAL מסנן לפי רול. CHECK `>= 0`. |
+| `unit` | TEXT NOT NULL | CHECK: `unit` / `kg` / `liter` / `pack`. ברירת מחדל `unit`. |
+| `weight_kg` | NUMERIC(8,3) | משקל פיזי לצרכי משלוח/אזילה. CHECK `>= 0`. |
+| `status` | TEXT NOT NULL | CHECK: `active` / `inactive`. ברירת מחדל `active`. |
+| `created_at` | TIMESTAMPTZ NOT NULL | |
+| `updated_at` | TIMESTAMPTZ NOT NULL | מתעדכן אוטומטית ע"י טריגר `product_variants_set_updated_at`. |
+
+**אינדקסים:** `(product_id)`, `(tenant_id, sku)` UNIQUE, `(tenant_id, barcode)`.
+**טריגר:** `product_variants_seed_inventory` (AFTER INSERT) — יוצר אוטומטית שורות `product_inventory` ריקות לכל branch פעיל בטנאנט.
+**RLS:** `product_variants_tenant_isolation` — `tenant_id = current_tenant_id()`. ENABLE + FORCE RLS.
+**מוגדר ב:** PRD #3
+
+---
+
+### `variant_attribute_values` — שיוך variant ↔ ערך attribute (many-to-many)
+
+| עמודה | סוג | תיאור |
+|---|---|---|
+| `variant_id` | UUID NOT NULL | FK ל-`product_variants` ON DELETE CASCADE |
+| `attribute_value_id` | UUID NOT NULL | FK ל-`product_attribute_values` ON DELETE CASCADE |
+
+**PRIMARY KEY:** `(variant_id, attribute_value_id)`.
+**RLS:** `variant_attribute_values_tenant_isolation` — derivation דרך הקשר ל-`product_variants` (אין `tenant_id` ישיר על הטבלה). ENABLE + FORCE RLS.
+**מוגדר ב:** PRD #3
+
+---
+
+### `product_inventory` — מלאי לפי variant × branch
+
+| עמודה | סוג | תיאור |
+|---|---|---|
+| `id` | UUID PK | |
+| `tenant_id` | UUID NOT NULL | FK ל-`tenants` ON DELETE CASCADE |
+| `branch_id` | UUID NOT NULL | FK ל-`branches` ON DELETE CASCADE |
+| `variant_id` | UUID NOT NULL | FK ל-`product_variants` ON DELETE CASCADE |
+| `qty` | NUMERIC(10,3) NOT NULL DEFAULT 0 | כמות נוכחית במלאי. CHECK `>= 0`. |
+| `reorder_level` | NUMERIC(10,3) NOT NULL DEFAULT 0 | סף "מלאי נמוך". אם `qty <= reorder_level` → badge אדום ב-UI. CHECK `>= 0`. |
+| `updated_at` | TIMESTAMPTZ NOT NULL | מתעדכן אוטומטית ע"י טריגר `product_inventory_set_updated_at`. |
+
+**UNIQUE:** `(branch_id, variant_id)` — שורה אחת לכל הצלבה.
+**אינדקסים:** `(branch_id)`, `(variant_id)`, partial `(tenant_id, branch_id) WHERE qty <= reorder_level` (לתצוגת low-stock מהירה).
+**RLS:** `inventory_branch_isolation` — `tenant_id = current_tenant_id() AND (current_user_role() = 'owner' OR branch_id = current_branch_id())`. `owner` רואה את כל הסניפים; שאר הרולים — רק הסניף שלהם. ENABLE + FORCE RLS.
+**Seeding אוטומטי:** שתי דרכים מובילות ליצירת שורת inventory ריקה — `INSERT` של variant חדש (טריגר על `product_variants`) או `INSERT` של branch חדש (טריגר על `branches`). שני הטריגרים משתמשים ב-`ON CONFLICT (branch_id, variant_id) DO NOTHING` — חזרה על פעולה בטוחה.
+**מוגדר ב:** PRD #3
 
 ---
 
@@ -168,14 +309,12 @@ revoked   — בוטלה ידנית
 ---
 
 ## טבלאות עתידיות (לתיעוד כשייכתב PRD שלהן)
-
-- `branches` — סניפים בתוך tenant (Phase 1.5/2)
 - `customers` — לקוחות הקצה (B2C של ה-tenant)
 - `pets` — חיות של לקוחות
-- `products` — מוצרים
-- `inventory` — מלאי לפי מחסן
 - `orders` — הזמנות
 - `order_items` — פריטים בהזמנה
 - `subscriptions` — מנויים
 - `notifications` — התראות
 - `loyalty_points` — נקודות נאמנות
+- `suppliers` — ספקים (כרגע `products.supplier_name` הוא טקסט חופשי)
+- `price_tiers` — מחיר לפי לקוח / B2B (P2)

@@ -18,8 +18,9 @@ risk_sensitivity: Medium
 3. **[../../designs/dashboard-branch/](../../designs/dashboard-branch/)** — רפרנס ויזואלי חי (המסך הראשון שעוצב)
 4. **[../workflows/design-screen.md](../workflows/design-screen.md)** — הזרימה המלאה (חדש/עדכון + git protocol)
 5. PRD רלוונטי
-6. עץ האפיון — להבין את המודול
-7. [hebrew-rtl-expert](../domain-experts/hebrew-rtl-expert.md) — חובה לכל עיצוב
+6. **[../../prd/_shared/data-model.md](../../prd/_shared/data-model.md)** — מילון הטבלאות החי. לוודא ששמות השדות והישויות בעיצוב תואמים בדיוק את ה-schema הקיים. אסור להמציא שדה שלא קיים.
+7. עץ האפיון — להבין את המודול
+8. [hebrew-rtl-expert](../domain-experts/hebrew-rtl-expert.md) — חובה לכל עיצוב
 
 ## Design system — Material Design 3 RTL (seed #1B5E20)
 

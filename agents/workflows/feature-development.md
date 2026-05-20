@@ -81,7 +81,14 @@
 - [ ] TypeScript types generated
 - [ ] Tests for RLS + business logic
 
-**Handoff**: Schema + endpoints → Frontend Engineer + Integrations Engineer (אם רלוונטי)
+**Handoff artifact (חובה)**: backend כותב `API-contract.md` בשורש ה-PR עם:
+- כל endpoint / Edge Function: URL, method, request body, response schema
+- קודי שגיאה ומשמעותם בעברית
+- נתיב קובץ ה-TypeScript types שנוצר
+
+Frontend Engineer **לא מתחיל** עד שה-`API-contract.md` קיים ב-PR.
+
+**Handoff**: `API-contract.md` + TS types → Frontend Engineer + Integrations Engineer (אם רלוונטי)
 
 ---
 
@@ -107,8 +114,19 @@
 
 ---
 
+### Stage 4.5: UI Implementation (ui-implementer, 30-60 min) — אם יש עיצוב מאושר
+**Trigger**: קיים קובץ עיצוב מאושר ב-`designs/` (נוצר דרך `workflows/design-screen.md`)
+**מי**: `disciplines/ui-implementer.md`
+**Output**: קומפוננטים בקוד עם design tokens מדויקים, מוכנים לחיבור ל-data
+
+**מתי לדלג**: אם אין עיצוב ב-`designs/` — Stage 4.5 מדולג, Frontend Engineer מיישם מ-wireframes ישירות.
+
+**Handoff**: קומפוננטים + tokens → Frontend Engineer
+
+---
+
 ### Stage 5: Frontend Implementation (frontend-engineer, 2-6 hours)
-**Trigger**: Backend ready + wireframes
+**Trigger**: `API-contract.md` קיים ב-PR + wireframes + קומפוננטים מ-ui-implementer (אם Stage 4.5 רץ)
 **מי**: `disciplines/frontend-engineer.md`
 **Output**: React components + pages + state
 
@@ -141,10 +159,12 @@
 
 ---
 
-### Stage 7a: QA (qa-engineer, 30-90 min)
+### Stage 7a: QA Planning (qa-engineer, 30-90 min)
 **Trigger**: כל הקוד גמור
 **מי**: `disciplines/qa-engineer.md`
-**Output**: Test report + bug list + ship/no-ship decision
+**Output**: Test plan + bug list + ship/no-ship decision
+
+**תפקיד**: qa-engineer מתכנן ומריץ בדיקות **לוגיות** (happy path, sad paths, edge cases, accessibility). הוא **לא** מריץ בדיקות runtime/browser — זה Stage 8.1.
 
 **Checklist בסיסי**:
 - [ ] Happy path
@@ -210,7 +230,24 @@
 - [ ] Production deploy
 - [ ] Post-deploy health check (15 min)
 
-**Handoff** → Stage 8.5 (Docs Keeper)
+**Handoff** → Stage 8.1 (QA Automation Runtime)
+
+---
+
+### Stage 8.1: QA Automation Runtime (qa-automation) — אחרי deploy
+**Trigger**: Deploy הצליח ל-Vercel/Supabase
+**מי**: `disciplines/qa-automation.md`
+**תפקיד**: בדיקות **runtime** — browser, console logs, network requests, Supabase logs, Vercel logs. משלים את Stage 7a (שהיה לוגי בלבד).
+
+**תרחישים לפי סוג הפיצ׳ר**:
+- שינוי auth / RLS → תרחיש signup + login + RBAC
+- migration → advisors + RLS smoke
+- שינוי UI מסך שלם → console + network + screenshot
+- כל deploy → תרחיש #1 (smoke בסיסי, ~30s)
+
+**Handoff**:
+- Pass → Stage 8.5 (Docs Keeper)
+- Fail → חזרה ל-discipline רלוונטי + repeat Stage 8
 
 ---
 

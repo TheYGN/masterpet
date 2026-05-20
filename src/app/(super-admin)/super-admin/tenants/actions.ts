@@ -72,6 +72,15 @@ export const approveTenantAction = withAuth(
     // For future role-change / tenant-suspend actions, revoke sessions explicitly.
   }
 
+  // 3b. Create default branch — every tenant needs at least one branch for RLS isolation.
+  // Uses slug "main" which is the convention (matches QA seed). Idempotent via ON CONFLICT DO NOTHING.
+  await admin.from("branches").upsert({
+    tenant_id: tenantId,
+    name: tenant.name,
+    slug: "main",
+    is_active: true,
+  }, { onConflict: "tenant_id,slug", ignoreDuplicates: true });
+
   // 4. Generate Magic Link and deliver it ourselves via Resend.
   // We pass `redirect_to` only; Supabase generates a token_hash flow link.
   const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
