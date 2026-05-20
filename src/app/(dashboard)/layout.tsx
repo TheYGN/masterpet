@@ -1,3 +1,4 @@
+import { redirect } from 'next/navigation';
 import { requireActiveTenant } from '@/app/lib/dal';
 import { NavRail } from '@/components/dashboard/nav-rail';
 import { TopBar } from '@/components/dashboard/top-bar';
@@ -19,7 +20,11 @@ export default async function DashboardLayout({
   children: React.ReactNode;
 }) {
   const session = await requireActiveTenant();
-  const tenant = session.tenant!;
+
+  // super_admin has no tenant — send them to their dedicated area
+  if (session.profile.role === 'super_admin') redirect('/super-admin/tenants');
+
+  const tenant = session.tenant!; // safe: non-super_admin always has a tenant here
 
   const userInitials = getInitials(session.profile.full_name);
   const planLabel = getPlanLabel(tenant.trial_status, tenant.trial_ends_at);
