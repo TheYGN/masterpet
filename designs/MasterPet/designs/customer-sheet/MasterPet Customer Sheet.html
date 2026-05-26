@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>MasterPet — Sheet לקוח</title>
+<meta name="viewport" content="width=1440">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/icon?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,300..700,0..1,-50..200" rel="stylesheet">
+<style>
+  :root {
+    --md-primary: #1B5E20;
+    --md-on-primary: #FFFFFF;
+    --md-primary-container: #B7F0BB;
+    --md-on-primary-container: #002106;
+
+    --md-secondary: #52634F;
+    --md-on-secondary: #FFFFFF;
+    --md-secondary-container: #D5E8CF;
+    --md-on-secondary-container: #101F10;
+
+    --md-tertiary: #38656A;
+    --md-on-tertiary: #FFFFFF;
+    --md-tertiary-container: #BCEBF1;
+    --md-on-tertiary-container: #002022;
+
+    --md-error: #B3261E;
+    --md-on-error: #FFFFFF;
+    --md-error-container: #F9DEDC;
+    --md-on-error-container: #410E0B;
+
+    --md-warning: #F59E0B;
+    --md-on-warning: #FFFFFF;
+    --md-warning-container: #FEF3C7;
+    --md-on-warning-container: #4A2F00;
+
+    --md-surface: #FAFAFA;
+    --md-surface-dim: #DBDFD7;
+    --md-surface-bright: #FAFDF5;
+    --md-surface-container-lowest: #FFFFFF;
+    --md-surface-container-low: #F5F7F1;
+    --md-surface-container: #EFF2EC;
+    --md-surface-container-high: #E9ECE6;
+    --md-surface-container-highest: #E4E7E1;
+
+    --md-on-surface: #191D17;
+    --md-on-surface-variant: #43483F;
+    --md-outline: #73796F;
+    --md-outline-variant: #C3C8BC;
+    --md-inverse-surface: #2E3129;
+    --md-inverse-on-surface: #F0F1EA;
+
+    --shadow-1: 0 1px 2px 0 rgba(0,0,0,0.04), 0 1px 3px 1px rgba(0,0,0,0.04);
+    --shadow-2: 0 1px 2px 0 rgba(0,0,0,0.06), 0 2px 6px 2px rgba(0,0,0,0.06);
+    --shadow-3: 0 4px 8px 0 rgba(0,0,0,0.08), 0 8px 24px 4px rgba(0,0,0,0.06);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: 'Heebo', 'Roboto', system-ui, -apple-system, sans-serif;
+    font-feature-settings: "ss01" on, "cv11" on;
+    background: var(--md-surface);
+    color: var(--md-on-surface);
+    line-height: 1.6;
+    min-width: 1440px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  .ms {
+    font-family: 'Material Symbols Outlined';
+    font-weight: normal; font-style: normal;
+    font-size: 24px; line-height: 1;
+    letter-spacing: normal; text-transform: none;
+    display: inline-block; white-space: nowrap; word-wrap: normal;
+    direction: ltr;
+    -webkit-font-feature-settings: 'liga'; font-feature-settings: 'liga';
+    -webkit-font-smoothing: antialiased;
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    user-select: none;
+  }
+  .ms-fill { font-variation-settings: 'FILL' 1, 'wght' 500, 'GRAD' 0, 'opsz' 24; }
+
+  .num { direction: ltr; unicode-bidi: isolate; font-variant-numeric: tabular-nums; display: inline-block; }
+  .currency { direction: ltr; unicode-bidi: isolate; font-variant-numeric: tabular-nums; display: inline-block; }
+
+  .state-layer { position: relative; overflow: hidden; }
+  .state-layer::after {
+    content: ""; position: absolute; inset: 0;
+    background: currentColor; opacity: 0;
+    transition: opacity 120ms ease;
+    pointer-events: none; border-radius: inherit;
+  }
+  .state-layer:hover::after { opacity: 0.08; }
+  .state-layer:active::after { opacity: 0.12; }
+
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--md-outline-variant); border-radius: 8px; border: 2px solid var(--md-surface); }
+  ::-webkit-scrollbar-thumb:hover { background: var(--md-outline); }
+
+  .ms-flip-rtl { transform: scaleX(-1); }
+
+  button:focus-visible, [role="button"]:focus-visible, a:focus-visible {
+    outline: 2px solid var(--md-primary);
+    outline-offset: 2px;
+  }
+
+  @keyframes caretBlink { 0%, 100% { opacity: 1 } 50% { opacity: 0 } }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="data.jsx"></script>
+<script type="text/babel" src="parts.jsx"></script>
+<script type="text/babel" src="main.jsx"></script>
+</body>
+</html>

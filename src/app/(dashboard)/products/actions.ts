@@ -6,7 +6,15 @@ import { writeAudit } from '@/app/lib/audit'
 import { getAuthenticatedClient } from '@/app/lib/dal'
 import type { Session } from '@/app/lib/definitions'
 import type {
+  ColumnMappingRecord,
+  ConflictStrategy,
+  ImportMappingTemplate,
+  ImportResult,
+  ImportRowData,
+} from './import-types'
+import type {
   ActionResult,
+  AddVariantsToProductInput,
   CreateProductInput,
   ListProductsFilters,
   ProductAttributeRow,
@@ -45,7 +53,7 @@ const PRODUCTS_PATH = '/products'
  */
 function variantColumns(role: Session['profile']['role']): string {
   const base =
-    'id, tenant_id, product_id, sku, barcode, internal_code, price, unit, weight_kg, status, created_at, updated_at'
+    'id, tenant_id, product_id, sku, barcode, internal_code, price, unit, weight_kg, status, deleted_at, created_at, updated_at'
   return role === 'owner' ? `${base}, cost_price` : base
 }
 
@@ -101,10 +109,30 @@ export const createProductAction = withAuth(
         return { error: `משקל ל-SKU ${v.sku} חייב להיות מספר אי-שלילי` }
     }
 
+    // Reject duplicate attribute names in input
+    const attrNameSet = new Set<string>()
+    for (const attr of input.attributes) {
+      const name = attr.name?.trim()
+      if (attrNameSet.has(name)) return { error: `שם attribute כפול: ${name}` }
+      attrNameSet.add(name)
+    }
+
     const tenantId = session.profile.tenant_id
     const supabase = await getAuthenticatedClient()
 
-    // ---- 1b. INSERT product ---------------------------------------------------
+    // ---- 1b. Resolve default branch (for initial inventory update) -----------
+    let defaultBranchId: string | null = null
+    if (input.variants.some(v => v.initial_qty || v.initial_reorder_level)) {
+      const { data: branches } = await supabase
+        .from('branches')
+        .select('id, slug')
+        .eq('is_active', true)
+        .order('created_at', { ascending: true })
+      const b = (branches ?? []).find(br => br.slug === 'main') ?? (branches ?? [])[0]
+      defaultBranchId = b?.id ?? null
+    }
+
+    // ---- 1c. INSERT product ---------------------------------------------------
     const { data: product, error: productErr } = await supabase
       .from('products')
       .insert({
@@ -118,6 +146,7 @@ export const createProductAction = withAuth(
         diet_type: input.diet_type,
         allergen_free: input.allergen_free ?? [],
         tags: input.tags ?? [],
+        categories: input.categories ?? [],
         vat_rate: input.vat_rate,
       })
       .select('id')
@@ -235,9 +264,19 @@ export const createProductAction = withAuth(
           return { error: GENERIC_ERROR }
         }
       }
+
+      // Update initial inventory if provided (trigger already seeded qty=0 row)
+      if (defaultBranchId && (v.initial_qty || v.initial_reorder_level)) {
+        await supabase
+          .from('product_inventory')
+          .update({ qty: v.initial_qty ?? 0, reorder_level: v.initial_reorder_level ?? 0 })
+          .eq('variant_id', variantId)
+          .eq('branch_id', defaultBranchId)
+        // Non-fatal — inventory can be set later; don't rollback for this
+      }
     }
 
-    // ---- 1e. Audit + revalidate ----------------------------------------------
+    // ---- Audit + revalidate ----------------------------------------------
     await writeAudit({
       action: 'product.created',
       session,
@@ -311,6 +350,7 @@ export const updateProductAction = withAuth(
     }
     if (updates.allergen_free !== undefined) patch.allergen_free = updates.allergen_free
     if (updates.tags !== undefined) patch.tags = updates.tags
+    if (updates.categories !== undefined) patch.categories = updates.categories
     if (updates.vat_rate !== undefined) {
       if (typeof updates.vat_rate !== 'number' || updates.vat_rate < 0)
         return { error: 'אחוז מע"מ חייב להיות מספר אי-שלילי' }
@@ -405,8 +445,13 @@ export const updateVariantAction = withAuth(
 
     patch.updated_at = new Date().toISOString()
 
+    const tenantId = session.profile.tenant_id
     const supabase = await getAuthenticatedClient()
-    const { error } = await supabase.from('product_variants').update(patch).eq('id', variantId)
+    const { error } = await supabase
+      .from('product_variants')
+      .update(patch)
+      .eq('id', variantId)
+      .eq('tenant_id', tenantId)
 
     if (error) {
       console.error('[updateVariant] update failed', error)
@@ -429,7 +474,283 @@ export const updateVariantAction = withAuth(
 )
 
 // ============================================================================
-// 4. updateInventoryAction — owner / branch_manager / warehouse
+// 4. addVariantsToProductAction — owner only
+//    Adds new attribute values / new attributes / new variants to an existing
+//    product. Only additions are supported — no deletions.
+// ============================================================================
+
+export const addVariantsToProductAction = withAuth(
+  ['owner'],
+  async (
+    session,
+    input: AddVariantsToProductInput
+  ): Promise<ActionResult<{ addedVariants: number }>> => {
+    const { productId, attributeValueAdditions, newAttributes, newVariants } = input
+
+    if (!productId) return { error: 'productId חסר' }
+
+    const tenantId = session.profile.tenant_id
+    const supabase = await getAuthenticatedClient()
+
+    // Verify product belongs to this tenant and is not deleted
+    const { data: product, error: productErr } = await supabase
+      .from('products')
+      .select('id')
+      .eq('id', productId)
+      .is('deleted_at', null)
+      .maybeSingle()
+
+    if (productErr || !product) return { error: 'המוצר לא נמצא' }
+
+    // ── Load existing attributes + values for this product ──────────────────
+    const { data: existingAttrs, error: attrFetchErr } = await supabase
+      .from('product_attributes')
+      .select('id, name, position')
+      .eq('product_id', productId)
+      .order('position', { ascending: true })
+
+    if (attrFetchErr) {
+      console.error('[addVariants] attributes fetch failed', attrFetchErr)
+      return { error: GENERIC_ERROR }
+    }
+
+    const attrIds = (existingAttrs ?? []).map((a) => a.id as string)
+    let existingValues: ProductAttributeValueRow[] = []
+
+    if (attrIds.length > 0) {
+      const { data: vRows, error: vErr } = await supabase
+        .from('product_attribute_values')
+        .select('id, tenant_id, attribute_id, value, position')
+        .in('attribute_id', attrIds)
+      if (vErr) {
+        console.error('[addVariants] values fetch failed', vErr)
+        return { error: GENERIC_ERROR }
+      }
+      existingValues = (vRows ?? []) as ProductAttributeValueRow[]
+    }
+
+    // nameToAttrId: attrName → attrId
+    const nameToAttrId = new Map<string, string>()
+    // attrIdToValueMap: attrId → Map<valueText, valueId>
+    const attrIdToValueMap = new Map<string, Map<string, string>>()
+
+    for (const a of existingAttrs ?? []) {
+      nameToAttrId.set(a.name as string, a.id as string)
+      const vm = new Map<string, string>()
+      for (const v of existingValues.filter((ev) => ev.attribute_id === a.id)) {
+        vm.set(v.value, v.id)
+      }
+      attrIdToValueMap.set(a.id as string, vm)
+    }
+
+    // ── 1. Add new values to existing attributes ─────────────────────────────
+    for (const addition of attributeValueAdditions) {
+      const vm = attrIdToValueMap.get(addition.attributeId)
+      if (!vm) continue
+
+      const currentMaxPos = existingValues
+        .filter((v) => v.attribute_id === addition.attributeId)
+        .reduce((max, v) => Math.max(max, v.position), -1)
+
+      const toInsert = addition.newValues
+        .map((v) => v.trim())
+        .filter((v) => v && !vm.has(v))
+        .map((v, i) => ({
+          tenant_id: tenantId,
+          attribute_id: addition.attributeId,
+          value: v,
+          position: currentMaxPos + 1 + i,
+        }))
+
+      if (toInsert.length === 0) continue
+
+      const { data: inserted, error: insertErr } = await supabase
+        .from('product_attribute_values')
+        .insert(toInsert)
+        .select('id, value')
+
+      if (insertErr || !inserted) {
+        console.error('[addVariants] insert attribute values failed', insertErr)
+        return { error: GENERIC_ERROR }
+      }
+
+      for (const row of inserted) {
+        vm.set(row.value as string, row.id as string)
+      }
+    }
+
+    // ── 2. Add brand-new attributes (simple → variable conversion) ───────────
+    // If an attribute with the same name already exists in the DB, fold the new
+    // values into it instead of inserting a duplicate row.
+    let newAttrPosition = (existingAttrs ?? []).length
+
+    for (const attr of newAttributes) {
+      const attrName = attr.name?.trim()
+      if (!attrName || attr.values.length === 0) continue
+
+      if (nameToAttrId.has(attrName)) {
+        // Merge values into the existing attribute
+        const existingAttrId = nameToAttrId.get(attrName)!
+        const vm = attrIdToValueMap.get(existingAttrId)!
+        const currentMaxPos = existingValues
+          .filter((v) => v.attribute_id === existingAttrId)
+          .reduce((max, v) => Math.max(max, v.position), -1)
+
+        const toInsert = attr.values
+          .map((v) => v.trim())
+          .filter((v) => v && !vm.has(v))
+          .map((v, i) => ({
+            tenant_id: tenantId,
+            attribute_id: existingAttrId,
+            value: v,
+            position: currentMaxPos + 1 + i,
+          }))
+
+        if (toInsert.length > 0) {
+          const { data: inserted, error: insertErr } = await supabase
+            .from('product_attribute_values')
+            .insert(toInsert)
+            .select('id, value')
+
+          if (insertErr || !inserted) {
+            console.error('[addVariants] insert attribute values (merge) failed', insertErr)
+            return { error: GENERIC_ERROR }
+          }
+
+          for (const row of inserted) {
+            vm.set(row.value as string, row.id as string)
+          }
+        }
+        continue
+      }
+
+      // Truly new attribute
+      const { data: newAttr, error: attrInsErr } = await supabase
+        .from('product_attributes')
+        .insert({
+          tenant_id: tenantId,
+          product_id: productId,
+          name: attrName,
+          position: newAttrPosition++,
+        })
+        .select('id')
+        .single()
+
+      if (attrInsErr || !newAttr) {
+        console.error('[addVariants] insert attribute failed', attrInsErr)
+        return { error: GENERIC_ERROR }
+      }
+
+      const newAttrId = newAttr.id as string
+      nameToAttrId.set(attrName, newAttrId)
+
+      const vm = new Map<string, string>()
+      const valPayload = attr.values
+        .map((v) => v.trim())
+        .filter(Boolean)
+        .map((v, vi) => ({
+          tenant_id: tenantId,
+          attribute_id: newAttrId,
+          value: v,
+          position: vi,
+        }))
+
+      const { data: valRows, error: valInsErr } = await supabase
+        .from('product_attribute_values')
+        .insert(valPayload)
+        .select('id, value')
+
+      if (valInsErr || !valRows) {
+        console.error('[addVariants] insert new attribute values failed', valInsErr)
+        return { error: GENERIC_ERROR }
+      }
+
+      for (const row of valRows) {
+        vm.set(row.value as string, row.id as string)
+      }
+      attrIdToValueMap.set(newAttrId, vm)
+    }
+
+    // ── 3. Insert new variants ───────────────────────────────────────────────
+    let addedCount = 0
+
+    for (const v of newVariants) {
+      if (!v.sku?.trim()) return { error: 'לכל variant חדש חייב SKU' }
+      if (typeof v.price !== 'number' || v.price < 0)
+        return { error: `מחיר ל-SKU ${v.sku} חייב להיות מספר אי-שלילי` }
+
+      const { data: variantRow, error: variantErr } = await supabase
+        .from('product_variants')
+        .insert({
+          tenant_id: tenantId,
+          product_id: productId,
+          sku: v.sku.trim(),
+          barcode: v.barcode?.trim() || null,
+          internal_code: v.internal_code?.trim() || null,
+          price: v.price,
+          cost_price: v.cost_price ?? null,
+          unit: v.unit,
+          weight_kg: v.weight_kg ?? null,
+        })
+        .select('id')
+        .single()
+
+      if (variantErr || !variantRow) {
+        console.error('[addVariants] insert variant failed', { sku: v.sku, err: variantErr })
+        return {
+          error: variantErr?.code === '23505' ? `SKU ${v.sku} כבר קיים` : GENERIC_ERROR,
+        }
+      }
+
+      const variantId = variantRow.id as string
+
+      // Resolve combination (attrName → valueText) → attribute_value_ids
+      const linkPayload: Array<{ variant_id: string; attribute_value_id: string }> = []
+      for (const [attrName, valueText] of Object.entries(v.combination)) {
+        const attrId = nameToAttrId.get(attrName)
+        if (!attrId) continue
+        const vm = attrIdToValueMap.get(attrId)
+        if (!vm) continue
+        const valueId = vm.get(valueText)
+        if (!valueId) continue
+        linkPayload.push({ variant_id: variantId, attribute_value_id: valueId })
+      }
+
+      if (linkPayload.length > 0) {
+        const { error: linkErr } = await supabase
+          .from('variant_attribute_values')
+          .insert(linkPayload)
+        if (linkErr) {
+          console.error('[addVariants] insert variant_attribute_values failed', linkErr)
+          return { error: GENERIC_ERROR }
+        }
+      }
+
+      addedCount++
+    }
+
+    await writeAudit({
+      action: 'product.updated',
+      session,
+      entityType: 'product',
+      entityId: productId,
+      metadata: {
+        added_variants: addedCount,
+        added_attributes: newAttributes.length,
+        added_attribute_values: attributeValueAdditions.reduce(
+          (sum, a) => sum + a.newValues.length,
+          0
+        ),
+      },
+    })
+
+    revalidatePath(PRODUCTS_PATH)
+    return { data: { addedVariants: addedCount } }
+  }
+)
+
+// ============================================================================
+// 5. updateInventoryAction — owner / branch_manager / warehouse
 // ============================================================================
 
 export const updateInventoryAction = withAuth(
@@ -494,7 +815,7 @@ export const updateInventoryAction = withAuth(
 )
 
 // ============================================================================
-// 5. listProductsAction — all dashboard roles
+// 6. listProductsAction — all dashboard roles
 // ============================================================================
 
 export const listProductsAction = withAuth(
@@ -537,11 +858,13 @@ export const listProductsAction = withAuth(
     }
     if (filters.search?.trim()) {
       const term = escapeLike(filters.search.trim())
+      // Strip chars that break PostgREST array syntax ({},") before embedding in cs.{}
+      const safeTerm = term.replace(/[{},"']/g, '')
       // Top-level fields: name, tags (array contains)
       // SKU / barcode / internal_code live on variants — Postgres can't `or`
       // across joined tables in one shot, so we OR on product.name + tags here
       // and rely on a second filter step below for SKU-style matches.
-      query = query.or(`name.ilike.%${term}%,tags.cs.{${term}}`)
+      query = query.or(`name.ilike.%${term}%,tags.cs.{${safeTerm}}`)
     }
     if (typeof filters.limit === 'number' && filters.limit > 0) {
       const offset = typeof filters.offset === 'number' && filters.offset > 0 ? filters.offset : 0
@@ -581,10 +904,17 @@ export const listProductsAction = withAuth(
     }
 
     const items: ProductListItem[] = rows.map((r) => {
-      const variants = r.variants ?? []
+      const variants = (r.variants ?? []).filter((v) => !v.deleted_at)
       let totalQty = 0
       let lowStock = false
+      let minPrice: number | null = null
+      let maxPrice: number | null = null
       for (const v of variants) {
+        const price = typeof v.price === 'number' ? v.price : null
+        if (price !== null) {
+          if (minPrice === null || price < minPrice) minPrice = price
+          if (maxPrice === null || price > maxPrice) maxPrice = price
+        }
         for (const inv of v.inventory ?? []) {
           totalQty += inv.qty ?? 0
           if ((inv.qty ?? 0) <= (inv.reorder_level ?? 0)) lowStock = true
@@ -603,6 +933,8 @@ export const listProductsAction = withAuth(
         variants_count: variants.length,
         total_qty: totalQty,
         low_stock: lowStock,
+        min_price: minPrice,
+        max_price: maxPrice === minPrice ? null : maxPrice,
         created_at: r.created_at,
         updated_at: r.updated_at,
       }
@@ -613,7 +945,7 @@ export const listProductsAction = withAuth(
 )
 
 // ============================================================================
-// 6. getProductAction — all dashboard roles
+// 7. getProductAction — all dashboard roles
 // ============================================================================
 
 export const getProductAction = withAuth(
@@ -626,7 +958,7 @@ export const getProductAction = withAuth(
     const { data: product, error: productErr } = await supabase
       .from('products')
       .select(
-        'id, tenant_id, name, description, image_url, supplier_name, animal_type, age_group, diet_type, allergen_free, tags, vat_rate, status, deleted_at, created_at, updated_at'
+        'id, tenant_id, name, description, image_url, supplier_name, animal_type, age_group, diet_type, allergen_free, tags, categories, vat_rate, status, deleted_at, created_at, updated_at'
       )
       .eq('id', productId)
       .is('deleted_at', null)
@@ -665,11 +997,12 @@ export const getProductAction = withAuth(
       values = (valueRows ?? []) as ProductAttributeValueRow[]
     }
 
-    // Variants (with cost_price omitted for non-owner)
+    // Variants (with cost_price omitted for non-owner) — archived variants excluded
     const { data: variants, error: variantErr } = await supabase
       .from('product_variants')
       .select(variantColumns(session.profile.role))
       .eq('product_id', productId)
+      .is('deleted_at', null)
       .order('created_at', { ascending: true })
 
     if (variantErr) {
@@ -736,7 +1069,146 @@ export const getProductAction = withAuth(
 )
 
 // ============================================================================
-// 7. deleteProductAction — owner only (soft delete)
+// 8. archiveVariantAction — owner only (soft delete)
+//    Sets deleted_at = now(). The row stays in DB so order history remains intact.
+// ============================================================================
+
+export const archiveVariantAction = withAuth(
+  ['owner'],
+  async (session, variantId: string): Promise<ActionResult<{ variantId: string }>> => {
+    if (!variantId) return { error: 'variantId חסר' }
+
+    const tenantId = session.profile.tenant_id
+    const supabase = await getAuthenticatedClient()
+
+    const { data: existing } = await supabase
+      .from('product_variants')
+      .select('id, sku, product_id')
+      .eq('id', variantId)
+      .eq('tenant_id', tenantId)
+      .is('deleted_at', null)
+      .maybeSingle()
+
+    if (!existing) return { error: 'ה-variant לא נמצא' }
+
+    const { error } = await supabase
+      .from('product_variants')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', variantId)
+      .eq('tenant_id', tenantId)
+
+    if (error) {
+      console.error('[archiveVariant] update failed', error)
+      return { error: GENERIC_ERROR }
+    }
+
+    await writeAudit({
+      action: 'product_variant.archived',
+      session,
+      entityType: 'product_variant',
+      entityId: variantId,
+      metadata: { sku: existing.sku, product_id: existing.product_id },
+    })
+
+    revalidatePath(PRODUCTS_PATH)
+    return { data: { variantId } }
+  }
+)
+
+// ============================================================================
+// 8b. deleteAttributeAction — owner only (hard delete)
+//     Blocked if any non-archived variant still references this attribute.
+// ============================================================================
+
+export const deleteAttributeAction = withAuth(
+  ['owner'],
+  async (session, attributeId: string): Promise<ActionResult<void>> => {
+    if (!attributeId) return { error: 'מזהה attribute חסר' }
+
+    const tenantId = session.profile.tenant_id
+    const supabase = await getAuthenticatedClient()
+
+    const { data: attr } = await supabase
+      .from('product_attributes')
+      .select('id, product_id, name')
+      .eq('id', attributeId)
+      .eq('tenant_id', tenantId)
+      .maybeSingle()
+
+    if (!attr) return { error: 'ה-attribute לא נמצא' }
+
+    // Collect value IDs for this attribute
+    const { data: values } = await supabase
+      .from('product_attribute_values')
+      .select('id')
+      .eq('attribute_id', attributeId)
+      .eq('tenant_id', tenantId)
+
+    const valueIds = (values ?? []).map((v) => v.id as string)
+
+    // Block if any active (non-archived) variant references these values
+    if (valueIds.length > 0) {
+      const { data: links } = await supabase
+        .from('variant_attribute_values')
+        .select('variant_id')
+        .in('attribute_value_id', valueIds)
+
+      const variantIds = [...new Set((links ?? []).map((l) => l.variant_id as string))]
+
+      if (variantIds.length > 0) {
+        const { count } = await supabase
+          .from('product_variants')
+          .select('id', { count: 'exact', head: true })
+          .in('id', variantIds)
+          .eq('tenant_id', tenantId)
+          .is('deleted_at', null)
+
+        if (count && count > 0) {
+          return { error: 'לא ניתן למחוק — ישנם variants פעילים שמשתמשים בתכונה זו. ארכב אותם קודם.' }
+        }
+      }
+
+      // Remove orphaned join rows, then values
+      await supabase.from('variant_attribute_values').delete().in('attribute_value_id', valueIds)
+
+      const { error: valErr } = await supabase
+        .from('product_attribute_values')
+        .delete()
+        .eq('attribute_id', attributeId)
+        .eq('tenant_id', tenantId)
+
+      if (valErr) {
+        console.error('[deleteAttribute] delete values failed', valErr)
+        return { error: GENERIC_ERROR }
+      }
+    }
+
+    const { error: attrErr } = await supabase
+      .from('product_attributes')
+      .delete()
+      .eq('id', attributeId)
+      .eq('tenant_id', tenantId)
+
+    if (attrErr) {
+      console.error('[deleteAttribute] delete attribute failed', attrErr)
+      return { error: GENERIC_ERROR }
+    }
+
+    await writeAudit({
+      action: 'product_attribute.deleted',
+      session,
+      entityType: 'product_attribute',
+      entityId: attributeId,
+      metadata: { name: attr.name, product_id: attr.product_id },
+    })
+
+    revalidatePath(PRODUCTS_PATH)
+    return { data: undefined }
+  },
+)
+
+// ============================================================================
+// 9. deleteProductAction — owner only (soft delete)
 // ============================================================================
 
 export const deleteProductAction = withAuth(
@@ -781,7 +1253,7 @@ export const deleteProductAction = withAuth(
 )
 
 // ============================================================================
-// 8. duplicateProductAction — owner only
+// 9. duplicateProductAction — owner only
 // ============================================================================
 
 export const duplicateProductAction = withAuth(
@@ -796,7 +1268,7 @@ export const duplicateProductAction = withAuth(
     const { data: source, error: srcErr } = await supabase
       .from('products')
       .select(
-        'id, name, description, image_url, supplier_name, animal_type, age_group, diet_type, allergen_free, tags, vat_rate, status'
+        'id, name, description, image_url, supplier_name, animal_type, age_group, diet_type, allergen_free, tags, categories, vat_rate, status'
       )
       .eq('id', productId)
       .is('deleted_at', null)
@@ -833,13 +1305,14 @@ export const duplicateProductAction = withAuth(
       srcValues = (vRows ?? []) as typeof srcValues
     }
 
-    // owner role here, so cost_price is always selectable
+    // owner role here, so cost_price is always selectable — skip archived variants
     const { data: srcVariants, error: varErr } = await supabase
       .from('product_variants')
       .select(
         'id, sku, barcode, internal_code, price, cost_price, unit, weight_kg, status'
       )
       .eq('product_id', productId)
+      .is('deleted_at', null)
     if (varErr) {
       console.error('[duplicateProduct] variants fetch failed', varErr)
       return { error: GENERIC_ERROR }
@@ -873,6 +1346,7 @@ export const duplicateProductAction = withAuth(
         diet_type: source.diet_type,
         allergen_free: source.allergen_free ?? [],
         tags: source.tags ?? [],
+        categories: source.categories ?? [],
         vat_rate: source.vat_rate,
         // status defaults to 'active' even if source was 'inactive' / 'discontinued' —
         // duplicating a discontinued product into "active" feels intentional.
@@ -997,5 +1471,293 @@ export const duplicateProductAction = withAuth(
 
     revalidatePath(PRODUCTS_PATH)
     return { data: { productId: newProductId } }
+  }
+)
+
+// ============================================================================
+// 10. importProductsAction — owner only
+//    Receives pre-validated rows from the client, inserts them in parallel
+//    batches of IMPORT_BATCH_SIZE. Failures are collected and returned —
+//    they do NOT abort the entire batch.
+// ============================================================================
+
+const IMPORT_BATCH_SIZE = 50
+
+type RowOutcome =
+  | { ok: true; inventoryUpdate?: { variantId: string; qty: number; reorderLevel: number } }
+  | { ok: false; rowIndex: number; sku?: string; reason: string }
+
+export const importProductsAction = withAuth(
+  ['owner'],
+  async (session, rows: ImportRowData[], conflictStrategy: ConflictStrategy = 'skip'): Promise<ActionResult<ImportResult>> => {
+    if (!Array.isArray(rows) || rows.length === 0)
+      return { error: 'אין שורות לייבוא' }
+    if (rows.length > 5000)
+      return { error: 'מקסימום 5,000 שורות לייבוא אחד' }
+
+    const tenantId = session.profile.tenant_id
+    const supabase = await getAuthenticatedClient()
+
+    // Find default branch (slug='main', or first active branch)
+    const { data: branches } = await supabase
+      .from('branches')
+      .select('id, slug')
+      .eq('is_active', true)
+      .order('created_at', { ascending: true })
+
+    const defaultBranch =
+      (branches ?? []).find((b) => b.slug === 'main') ?? (branches ?? [])[0]
+
+    if (!defaultBranch) return { error: 'לא נמצא סניף פעיל לטנאנט' }
+
+    // Process one row — returns outcome. Inventory updates are deferred.
+    async function processRow(row: ImportRowData, rowIndex: number): Promise<RowOutcome> {
+      // --- INSERT product -------------------------------------------------------
+      const { data: product, error: productErr } = await supabase
+        .from('products')
+        .insert({
+          tenant_id:     tenantId,
+          name:          row.product.name,
+          description:   row.product.description ?? null,
+          supplier_name: row.product.supplier_name ?? null,
+          animal_type:   row.product.animal_type ?? 'other',
+          age_group:     row.product.age_group ?? 'all',
+          diet_type:     row.product.diet_type ?? 'regular',
+          allergen_free: [],
+          tags:          row.product.tags ?? [],
+          categories:    row.product.categories ?? [],
+          vat_rate:      row.product.vat_rate ?? 18,
+        })
+        .select('id')
+        .single()
+
+      if (productErr || !product)
+        return { ok: false, rowIndex, sku: row.variant.sku, reason: productErr?.message ?? 'שגיאה בשמירת המוצר' }
+
+      // --- INSERT variant (triggers inventory seed) ------------------------------
+      const { data: variant, error: variantErr } = await supabase
+        .from('product_variants')
+        .insert({
+          tenant_id:     tenantId,
+          product_id:    product.id,
+          sku:           row.variant.sku,
+          barcode:       row.variant.barcode ?? null,
+          internal_code: row.variant.internal_code ?? null,
+          price:         row.variant.price,
+          cost_price:    row.variant.cost_price ?? null,
+          unit:          row.variant.unit ?? 'unit',
+          weight_kg:     row.variant.weight_kg ?? null,
+          status:        row.variant.status ?? 'active',
+        })
+        .select('id')
+        .single()
+
+      if (variantErr || !variant) {
+        if (variantErr?.code === '23505' && conflictStrategy !== 'skip') {
+          // SKU exists in DB — apply merge or replace strategy
+          await supabase.from('products').delete().eq('id', product.id)
+
+          const { data: existingVariant, error: findErr } = await supabase
+            .from('product_variants')
+            .select('id, product_id')
+            .eq('tenant_id', tenantId)
+            .eq('sku', row.variant.sku)
+            .maybeSingle()
+
+          if (findErr || !existingVariant)
+            return { ok: false, rowIndex, sku: row.variant.sku, reason: 'שגיאה באיתור variant קיים' }
+
+          if (conflictStrategy === 'merge') {
+            const patch: Record<string, unknown> = {
+              price: row.variant.price,
+              unit: row.variant.unit,
+              status: row.variant.status,
+              updated_at: new Date().toISOString(),
+            }
+            if (row.variant.barcode) patch.barcode = row.variant.barcode
+            if (row.variant.internal_code) patch.internal_code = row.variant.internal_code
+            if (row.variant.cost_price != null) patch.cost_price = row.variant.cost_price
+            if (row.variant.weight_kg != null) patch.weight_kg = row.variant.weight_kg
+            await supabase
+              .from('product_variants')
+              .update(patch)
+              .eq('id', existingVariant.id)
+              .eq('tenant_id', tenantId)
+          } else {
+            // replace — overwrite variant and product completely
+            await supabase
+              .from('product_variants')
+              .update({
+                barcode:       row.variant.barcode ?? null,
+                internal_code: row.variant.internal_code ?? null,
+                price:         row.variant.price,
+                cost_price:    row.variant.cost_price ?? null,
+                unit:          row.variant.unit,
+                weight_kg:     row.variant.weight_kg ?? null,
+                status:        row.variant.status,
+                updated_at:    new Date().toISOString(),
+              })
+              .eq('id', existingVariant.id)
+              .eq('tenant_id', tenantId)
+
+            await supabase
+              .from('products')
+              .update({
+                name:          row.product.name,
+                description:   row.product.description ?? null,
+                supplier_name: row.product.supplier_name ?? null,
+                animal_type:   row.product.animal_type ?? 'other',
+                age_group:     row.product.age_group ?? 'all',
+                diet_type:     row.product.diet_type ?? 'regular',
+                tags:          row.product.tags ?? [],
+                categories:    row.product.categories ?? [],
+                vat_rate:      row.product.vat_rate ?? 18,
+                updated_at:    new Date().toISOString(),
+              })
+              .eq('id', existingVariant.product_id as string)
+              .eq('tenant_id', tenantId)
+          }
+
+          return {
+            ok: true,
+            inventoryUpdate: { variantId: existingVariant.id, qty: row.inventory.qty, reorderLevel: row.inventory.reorder_level },
+          }
+        }
+
+        // Not a 23505, or strategy=skip — rollback product and report
+        await supabase.from('products').delete().eq('id', product.id)
+        return {
+          ok: false,
+          rowIndex,
+          sku: row.variant.sku,
+          reason: variantErr?.code === '23505'
+            ? `SKU קיים, דולג: ${row.variant.sku}`
+            : (variantErr?.message ?? 'שגיאה בשמירת ה-variant'),
+        }
+      }
+
+      // Collect inventory update — executed in a parallel batch after the loop
+      if (row.inventory.qty > 0 || row.inventory.reorder_level > 0)
+        return { ok: true, inventoryUpdate: { variantId: variant.id, qty: row.inventory.qty, reorderLevel: row.inventory.reorder_level } }
+
+      return { ok: true }
+    }
+
+    // Process rows in parallel batches
+    const result: ImportResult = { imported: 0, failed: 0, errors: [] }
+    const inventoryUpdates: Array<{ variantId: string; qty: number; reorderLevel: number }> = []
+
+    for (let start = 0; start < rows.length; start += IMPORT_BATCH_SIZE) {
+      const batch = rows.slice(start, start + IMPORT_BATCH_SIZE)
+      const settled = await Promise.allSettled(
+        batch.map((row, localIdx) => processRow(row, start + localIdx))
+      )
+      for (const s of settled) {
+        const outcome = s.status === 'fulfilled' ? s.value : { ok: false as const, rowIndex: -1, reason: 'שגיאה לא צפויה' }
+        if (outcome.ok) {
+          result.imported++
+          if (outcome.inventoryUpdate) inventoryUpdates.push(outcome.inventoryUpdate)
+        } else {
+          result.failed++
+          result.errors.push({ rowIndex: outcome.rowIndex, sku: outcome.sku, reason: outcome.reason })
+        }
+      }
+    }
+
+    // Flush deferred inventory updates in parallel batches (non-fatal)
+    for (let start = 0; start < inventoryUpdates.length; start += IMPORT_BATCH_SIZE) {
+      await Promise.allSettled(
+        inventoryUpdates.slice(start, start + IMPORT_BATCH_SIZE).map(({ variantId, qty, reorderLevel }) =>
+          supabase
+            .from('product_inventory')
+            .update({ qty, reorder_level: reorderLevel })
+            .eq('variant_id', variantId)
+            .eq('branch_id', defaultBranch.id)
+        )
+      )
+    }
+
+    await writeAudit({
+      action: 'data.imported',
+      session,
+      entityType: 'product',
+      entityId: tenantId,
+      metadata: {
+        target: 'products',
+        imported: result.imported,
+        failed: result.failed,
+        total: rows.length,
+      },
+    })
+
+    revalidatePath(PRODUCTS_PATH)
+    return { data: result }
+  }
+)
+
+// ============================================================================
+// 11. saveImportMappingAction — owner only
+// ============================================================================
+
+export const saveImportMappingAction = withAuth(
+  ['owner'],
+  async (
+    session,
+    input: { name: string; target: 'products' | 'customers'; mapping: ColumnMappingRecord }
+  ): Promise<ActionResult<{ id: string }>> => {
+    if (!input.name?.trim()) return { error: 'שם המיפוי חסר' }
+    if (!input.mapping || Object.keys(input.mapping).length === 0)
+      return { error: 'מיפוי ריק' }
+
+    const tenantId = session.profile.tenant_id
+    const supabase = await getAuthenticatedClient()
+
+    const { data, error } = await supabase
+      .from('import_mapping_templates')
+      .upsert(
+        {
+          tenant_id: tenantId,
+          name:      input.name.trim(),
+          target:    input.target,
+          mapping:   input.mapping,
+        },
+        { onConflict: 'tenant_id,name,target' }
+      )
+      .select('id')
+      .single()
+
+    if (error || !data) {
+      console.error('[saveImportMapping] upsert failed', error)
+      return { error: GENERIC_ERROR }
+    }
+
+    return { data: { id: data.id } }
+  }
+)
+
+// ============================================================================
+// 12. getImportMappingsAction — owner only
+// ============================================================================
+
+export const getImportMappingsAction = withAuth(
+  ['owner'],
+  async (
+    session,
+    target: 'products' | 'customers'
+  ): Promise<ActionResult<ImportMappingTemplate[]>> => {
+    const supabase = await getAuthenticatedClient()
+
+    const { data, error } = await supabase
+      .from('import_mapping_templates')
+      .select('id, tenant_id, name, target, mapping, created_at, updated_at')
+      .eq('target', target)
+      .order('updated_at', { ascending: false })
+
+    if (error) {
+      console.error('[getImportMappings] select failed', error)
+      return { error: GENERIC_ERROR }
+    }
+
+    return { data: (data ?? []) as ImportMappingTemplate[] }
   }
 )

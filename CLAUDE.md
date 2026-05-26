@@ -24,7 +24,7 @@ agents/00-orchestrator.md
 
 - **`agents/00-orchestrator.md`** — ראש הצוות, מתזמן את כולם
 - **`agents/README.md`** — תיאור מלא של ה-DNA + ארכיטקטורת 3 השכבות
-- **`agents/disciplines/`** — 12 מומחים טכנולוגיים (Frontend, Backend, Mobile, Data-Analytics, Integrations, AI/ML, DevOps, **QA**, **QA-Automation**, Security, Code-Reviewer, Docs-Keeper) — **qa-automation** מבצע בדיקות runtime אוטומטיות (Preview + Supabase logs + Vercel logs) במקום שירין יבדוק ידנית
+- **`agents/disciplines/`** — 14 מומחים טכנולוגיים (Frontend, Backend, Mobile, Data-Analytics, Integrations, AI/ML, DevOps, **QA**, **QA-Automation**, Security, Code-Reviewer, Docs-Keeper, **Roadmap-Strategist**, **Challenger**) — **qa-automation** מבצע בדיקות runtime אוטומטיות (Preview + Supabase logs + Vercel logs) במקום שירין יבדוק ידנית. **roadmap-strategist** מסדר תור PRDs ומזהה תלויות נסתרות לפני שהן חוסמות. **challenger** הוא devil's advocate — שואל 3 שאלות לפני כל החלטה High-risk
 - **`agents/domain-experts/`** — 6 מומחי תוכן (Pet-Nutrition, Hebrew-RTL, Israeli-Logistics, SaaS-Billing, Conversational-Designer, Legal-Compliance)
 - **`agents/product/`** — Product Manager + UX Designer
 - **`agents/workflows/`** — תרחישים מוכנים (feature-development, bug-fix, sprint-planning)
@@ -61,19 +61,21 @@ node -e "const d=JSON.parse(require('fs').readFileSync('pet_platform_tree.excali
 - אל תבצע merge ל-main בלי `code-reviewer`
 - אל תיגע ב-billing/payments בלי `saas-billing-expert` + `security-engineer` + `legal-compliance-expert`
 - אל תעצב מסך / תעדכן עיצוב בלי `agents/workflows/design-screen.md` + `designs/DESIGN-SYSTEM.md`
+- אל תאשר PRD חדש בלי `challenger` pass (3 שאלות מתועדות ב-`prd/_shared/decisions-log.md`) + `roadmap-strategist` שבדק תלויות
+- אל תשנה priority בין PRDs בלי `roadmap-strategist` שמנמק את ההשפעה
 - **אל תבקש מירין לבדוק ידנית** אחרי deploy / שינוי auth / migration / שינוי UI משמעותי. במקום זה — הצע ב-CTA קצר את [`qa-automation`](agents/disciplines/qa-automation.md) (לפי הטריגרים ב-`00-orchestrator.md` §QA Automation). הסוכן עצמו רץ רק באישור מפורש — אתה רק מציע
 
 ## Troy Skills — ארגז הכלים של טרוי
 
-לטרוי יש 5 סקילים פעילים בתיקיית `skills/troy-*/SKILL.md`. הפעל כל אחד לפי הטריגרים:
+לטרוי יש 5 סקילים פעילים בתיקיית `.claude/skills/troy-*/SKILL.md` (זה המיקום שClaude Code סורק אוטומטית). הפעל כל אחד לפי הטריגרים:
 
 | Skill | קובץ | מתי להפעיל |
 |-------|------|-----------|
-| **troy-intake** | `skills/troy-intake/SKILL.md` | כל משימה חדשה שדורשת תכנון — לפני כל dispatch |
-| **troy-dispatch** | `skills/troy-dispatch/SKILL.md` | אחרי שירין אישר תוכנית — להפעיל סוכנים |
-| **troy-status** | `skills/troy-status/SKILL.md` | "מה הסטטוס?", "איפה אנחנו?", "מה פתוח?", "מה הצעד הבא?" |
-| **troy-handoff** | `skills/troy-handoff/SKILL.md` | אחרי כל סוכן שסיים — לפני שהסוכן הבא מתחיל |
-| **troy-retro** | `skills/troy-retro/SKILL.md` | "סיימנו", "תסכם", סוף workflow משמעותי |
+| **troy-intake** | `.claude/skills/troy-intake/SKILL.md` | כל משימה חדשה שדורשת תכנון — לפני כל dispatch |
+| **troy-dispatch** | `.claude/skills/troy-dispatch/SKILL.md` | אחרי שירין אישר תוכנית — להפעיל סוכנים |
+| **troy-status** | `.claude/skills/troy-status/SKILL.md` | "מה הסטטוס?", "איפה אנחנו?", "מה פתוח?", "מה הצעד הבא?" |
+| **troy-handoff** | `.claude/skills/troy-handoff/SKILL.md` | אחרי כל סוכן שסיים — לפני שהסוכן הבא מתחיל |
+| **troy-retro** | `.claude/skills/troy-retro/SKILL.md` | "סיימנו", "תסכם", סוף workflow משמעותי |
 
 **סדר עבודה תקין:** `troy-intake` → אישור → `troy-dispatch` → (לכל handoff: `troy-handoff`) → `troy-retro`
 

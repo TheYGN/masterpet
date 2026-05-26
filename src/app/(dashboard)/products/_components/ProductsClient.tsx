@@ -1,10 +1,13 @@
 'use client'
 
-import { useState, Suspense } from 'react'
-import type { ProductListItem, ListProductsFilters } from '../types'
+import { useState, Suspense, useTransition } from 'react'
+import type { ProductListItem, ListProductsFilters, ProductWithVariants } from '../types'
+import { getProductAction } from '../actions'
 import { KpiStrip } from './KpiStrip'
 import { ProductFilters } from './ProductFilters'
 import { ProductsTable } from './ProductsTable'
+import { ProductSheet } from './ProductSheet'
+import { ImportModal } from './ImportModal'
 
 interface ProductsClientProps {
   initialProducts: ProductListItem[]
@@ -13,6 +16,22 @@ interface ProductsClientProps {
 
 export function ProductsClient({ initialProducts }: ProductsClientProps) {
   const [showNewSheet, setShowNewSheet] = useState(false)
+  const [showImport, setShowImport] = useState(false)
+  const [editingProduct, setEditingProduct] = useState<ProductWithVariants | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [isLoadingProduct, startLoadProduct] = useTransition()
+
+  const handleEdit = (productId: string) => {
+    setLoadError(null)
+    startLoadProduct(async () => {
+      const result = await getProductAction(productId)
+      if ('error' in result && result.error) {
+        setLoadError(result.error)
+        return
+      }
+      if (result.data) setEditingProduct(result.data)
+    })
+  }
 
   return (
     <>
@@ -32,13 +51,15 @@ export function ProductsClient({ initialProducts }: ProductsClientProps) {
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            height: 40, padding: '0 16px', borderRadius: 999,
-            background: 'transparent', color: 'var(--md-primary)',
-            border: '1px solid var(--md-outline)',
-            fontFamily: 'inherit', fontSize: 13, fontWeight: 500, cursor: 'pointer',
-          }}>
+          <button
+            onClick={() => setShowImport(true)}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              height: 40, padding: '0 16px', borderRadius: 999,
+              background: 'transparent', color: 'var(--md-primary)',
+              border: '1px solid var(--md-outline)',
+              fontFamily: 'inherit', fontSize: 13, fontWeight: 500, cursor: 'pointer',
+            }}>
             <span className="ms" style={{ fontSize: 18 }}>upload_file</span>
             ייבוא מ-Excel
           </button>
@@ -57,16 +78,74 @@ export function ProductsClient({ initialProducts }: ProductsClientProps) {
       {initialProducts.length === 0 ? (
         <EmptyState onNewProduct={() => setShowNewSheet(true)} />
       ) : (
-        <ProductsTable products={initialProducts} />
+        <ProductsTable products={initialProducts} onEdit={handleEdit} />
       )}
 
-      {/* TODO: ProductSheet (שלב 2) */}
       {showNewSheet && (
-        <div style={{ display: 'none' }}>
-          {/* ProductSheet component — next phase */}
-        </div>
+        <ProductSheet onClose={() => setShowNewSheet(false)} />
       )}
+
+      {editingProduct && (
+        <ProductSheet
+          mode="edit"
+          initialProduct={editingProduct}
+          onClose={() => setEditingProduct(null)}
+        />
+      )}
+
+      {(isLoadingProduct || loadError) && (
+        <LoadOverlay error={loadError} onDismiss={() => setLoadError(null)} />
+      )}
+
+      <ImportModal open={showImport} onClose={() => setShowImport(false)} />
     </>
+  )
+}
+
+function LoadOverlay({ error, onDismiss }: { error: string | null; onDismiss: () => void }) {
+  return (
+    <div
+      onClick={error ? onDismiss : undefined}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 60,
+        background: 'rgba(0,0,0,0.32)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        cursor: error ? 'pointer' : 'default',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          minWidth: 240, padding: '20px 24px', borderRadius: 16,
+          background: 'var(--md-surface-container-high)',
+          color: 'var(--md-on-surface)',
+          display: 'flex', alignItems: 'center', gap: 12,
+          boxShadow: 'var(--shadow-3)',
+        }}
+      >
+        {error ? (
+          <>
+            <span className="ms" style={{ fontSize: 22, color: 'var(--md-error)' }}>error</span>
+            <span style={{ fontSize: 14 }}>{error}</span>
+            <button
+              onClick={onDismiss}
+              style={{
+                marginInlineStart: 12, height: 32, padding: '0 14px', borderRadius: 999,
+                background: 'var(--md-primary)', color: 'var(--md-on-primary)',
+                border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 500,
+              }}
+            >
+              סגור
+            </button>
+          </>
+        ) : (
+          <>
+            <span className="ms" style={{ fontSize: 22, color: 'var(--md-primary)' }}>hourglass_top</span>
+            <span style={{ fontSize: 14 }}>טוען מוצר…</span>
+          </>
+        )}
+      </div>
+    </div>
   )
 }
 

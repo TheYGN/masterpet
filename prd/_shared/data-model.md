@@ -3,8 +3,8 @@
 > **קובץ חי.** כל PRD מעדכן את הקובץ הזה. כל טבלה חדשה, כל שדה חדש — מתועד פה.
 > **חוק זהב:** כל טבלה (חוץ מ-`tenants`) חייבת `tenant_id UUID NOT NULL` + RLS policy.
 
-**עדכון אחרון:** 2026-05-20 (נוסף מודול Products — 6 טבלאות חדשות + טריגרים אוטומטיים ל-default branch ול-inventory seeding)
-**מקור הגדרה אחרון:** PRD: Products (`prd/03-products.md`) — סטטוס: Schema applied
+**עדכון אחרון:** 2026-05-25 (נוסף מודול Import — טבלת `import_mapping_templates` מ-PRD #4)
+**מקור הגדרה אחרון:** PRD: CSV/Excel Import Engine (`prd/04-csv-import.md`) — סטטוס: Implemented
 
 ---
 
@@ -160,7 +160,8 @@ auth.users (Supabase) (1) ─── (1) users.auth_user_id
 | `age_group` | TEXT NOT NULL | CHECK: `puppy` / `adult` / `senior` / `all`. ברירת מחדל `all`. |
 | `diet_type` | TEXT NOT NULL | CHECK: `regular` / `grain_free` / `hypoallergenic` / `super_premium` / `therapeutic`. ברירת מחדל `regular`. |
 | `allergen_free` | TEXT[] NOT NULL | מערך אלרגנים שהמוצר נקי מהם (`chicken`, `beef`, `grain`, ...). ברירת מחדל `'{}'`. |
-| `tags` | TEXT[] NOT NULL | תיוג חופשי per-tenant ("מבצע", "מומלץ"). אינדקס GIN לחיפוש מהיר. |
+| `tags` | TEXT[] NOT NULL | תגיות חופשיות per-tenant ("מבצע", "מומלץ"). אינדקס GIN לחיפוש מהיר. |
+| `categories` | TEXT[] NOT NULL | קטגוריות מוצר ("אוכל לכלבים", "גורים"). שדה עצמאי מ-`tags`. ברירת מחדל `'{}'`. |
 | `vat_rate` | NUMERIC(5,2) NOT NULL | אחוז מע"מ. ברירת מחדל `18.00`. תומך גם ב-0% למוצרים פטורים. |
 | `status` | TEXT NOT NULL | CHECK: `active` / `inactive` / `discontinued`. ברירת מחדל `active`. |
 | `deleted_at` | TIMESTAMPTZ | Soft delete — `NULL` = פעיל. RLS מסנן רק `deleted_at IS NULL`. variants ו-inventory נמחקים cascade דרך FK. |
@@ -257,6 +258,24 @@ auth.users (Supabase) (1) ─── (1) users.auth_user_id
 **RLS:** `inventory_branch_isolation` — `tenant_id = current_tenant_id() AND (current_user_role() = 'owner' OR branch_id = current_branch_id())`. `owner` רואה את כל הסניפים; שאר הרולים — רק הסניף שלהם. ENABLE + FORCE RLS.
 **Seeding אוטומטי:** שתי דרכים מובילות ליצירת שורת inventory ריקה — `INSERT` של variant חדש (טריגר על `product_variants`) או `INSERT` של branch חדש (טריגר על `branches`). שני הטריגרים משתמשים ב-`ON CONFLICT (branch_id, variant_id) DO NOTHING` — חזרה על פעולה בטוחה.
 **מוגדר ב:** PRD #3
+
+---
+
+### `import_mapping_templates` — תבניות מיפוי עמודות לייבוא (PRD #4)
+
+| עמודה | סוג | תיאור |
+|---|---|---|
+| `id` | UUID PK | |
+| `tenant_id` | UUID NOT NULL | FK ל-`tenants` ON DELETE CASCADE |
+| `name` | TEXT NOT NULL | שם התבנית שנתן המשתמש (לדוגמה "WooCommerce Export") |
+| `target` | TEXT NOT NULL | CHECK: `products` / `customers` — לאיזה ייבוא התבנית שייכת |
+| `mapping` | JSONB NOT NULL | `ColumnMappingRecord` — מיפוי עמודת-מקור → שדה-יעד |
+| `created_at` | TIMESTAMPTZ NOT NULL | |
+| `updated_at` | TIMESTAMPTZ NOT NULL | |
+
+**UNIQUE:** `(tenant_id, name, target)` — upsert לפי שלישיה זו (אותו שם+target → מחליף).
+**RLS:** `owner` בלבד, `tenant_id = current_tenant_id()`. ENABLE + FORCE RLS.
+**מוגדר ב:** PRD #4
 
 ---
 

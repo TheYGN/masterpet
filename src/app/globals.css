@@ -174,3 +174,30 @@
     @apply font-sans;
   }
 }
+
+/* ── Material Symbols utility class ─────────────────────────────────────────
+   All icons in the app use <span className="ms">icon_name</span>.
+   This class activates the ligature-based icon font loaded from Google Fonts.
+   Without it the browser renders the raw icon name as plain text.
+   ──────────────────────────────────────────────────────────────────────── */
+.ms {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  direction: ltr;
+  -webkit-font-feature-settings: 'liga';
+  font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}

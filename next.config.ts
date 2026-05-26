@@ -1,6 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '5mb',
+    },
+  },
   async headers() {
     return [
       {
@@ -20,7 +25,7 @@ const nextConfig: NextConfig = {
               "default-src 'self'",
               "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://challenges.cloudflare.com",
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-              "img-src 'self' data: blob:",
+              "img-src 'self' data: blob: https://*.supabase.co",
               "font-src 'self' https://fonts.gstatic.com",
               "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
               "frame-src https://challenges.cloudflare.com",

@@ -13,11 +13,13 @@ interface ProductsTableProps {
   total?: number
   page?: number
   onPageChange?: (page: number) => void
+  onEdit?: (productId: string) => void
 }
 
-export function ProductsTable({ products, total = products.length, page = 1, onPageChange }: ProductsTableProps) {
+export function ProductsTable({ products, total = products.length, page = 1, onPageChange, onEdit }: ProductsTableProps) {
   const [hoveredId, setHoveredId] = useState<string | null>(null)
   const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set())
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
 
@@ -74,6 +76,8 @@ export function ProductsTable({ products, total = products.length, page = 1, onP
               onToggle={toggleBulk}
               onDelete={handleDelete}
               onDuplicate={handleDuplicate}
+              onEdit={onEdit}
+              onImageClick={setLightboxUrl}
             />
           ))}
           {products.length === 0 && (
@@ -91,6 +95,50 @@ export function ProductsTable({ products, total = products.length, page = 1, onP
       {/* Bulk selection bar */}
       {bulkSelected.size > 0 && (
         <BulkBar count={bulkSelected.size} onClear={clearBulk} />
+      )}
+
+      {/* Lightbox */}
+      {lightboxUrl && (
+        <div
+          onClick={() => setLightboxUrl(null)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 100,
+            background: 'rgba(0,0,0,0.82)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'zoom-out',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ position: 'relative', cursor: 'default' }}
+          >
+            <img
+              src={lightboxUrl}
+              alt="תמונת מוצר"
+              style={{
+                maxWidth: 'min(90vw, 900px)',
+                maxHeight: '88vh',
+                objectFit: 'contain',
+                borderRadius: 12,
+                boxShadow: '0 24px 80px rgba(0,0,0,0.6)',
+                display: 'block',
+              }}
+            />
+            <button
+              onClick={() => setLightboxUrl(null)}
+              style={{
+                position: 'absolute', top: -16, insetInlineEnd: -16,
+                width: 36, height: 36, borderRadius: '50%',
+                background: 'rgba(30,30,30,0.85)', border: '1.5px solid rgba(255,255,255,0.18)',
+                color: '#fff', cursor: 'pointer',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+              }}
+            >
+              <span className="ms" style={{ fontSize: 20 }}>close</span>
+            </button>
+          </div>
+        </div>
       )}
     </>
   )
@@ -152,9 +200,11 @@ interface ProductRowProps {
   onToggle: (id: string) => void
   onDelete: (id: string) => void
   onDuplicate: (id: string) => void
+  onEdit?: (id: string) => void
+  onImageClick?: (url: string) => void
 }
 
-function ProductRow({ product: p, index, last, hovered, selected, onHover, onToggle, onDelete, onDuplicate }: ProductRowProps) {
+function ProductRow({ product: p, index, last, hovered, selected, onHover, onToggle, onDelete, onDuplicate, onEdit, onImageClick }: ProductRowProps) {
   const isInactive = p.status === 'inactive' || p.status === 'discontinued'
 
   let bg: string
@@ -177,6 +227,7 @@ function ProductRow({ product: p, index, last, hovered, selected, onHover, onTog
       }}
       onMouseEnter={() => onHover(p.id)}
       onMouseLeave={() => onHover(null)}
+      onClick={() => onEdit?.(p.id)}
     >
       {/* Checkbox */}
       <div style={{ display: 'flex', justifyContent: 'center' }}>
@@ -198,14 +249,23 @@ function ProductRow({ product: p, index, last, hovered, selected, onHover, onTog
       <div style={{ display: 'flex', justifyContent: 'center' }}>
         <div style={{
           width: 40, height: 40, borderRadius: 8,
-          background: p.animal_type === 'dog' ? 'rgba(183,240,187,0.30)' : 'var(--md-surface-container)',
+          background: 'var(--md-surface-container)',
           border: '1px solid var(--md-outline-variant)',
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
           color: 'var(--md-secondary)',
           opacity: isInactive ? 0.5 : 1,
-          flexShrink: 0,
+          flexShrink: 0, overflow: 'hidden',
         }}>
-          <span className="ms" style={{ fontSize: 22, fontVariationSettings: "'FILL' 1, 'wght' 400" }}>pets</span>
+          {p.image_url ? (
+            <img
+              src={p.image_url}
+              alt={p.name}
+              onClick={(e) => { e.stopPropagation(); onImageClick?.(p.image_url!) }}
+              style={{ width: '100%', height: '100%', objectFit: 'cover', cursor: 'zoom-in' }}
+            />
+          ) : (
+            <span className="ms" style={{ fontSize: 22, fontVariationSettings: "'FILL' 1, 'wght' 400" }}>pets</span>
+          )}
         </div>
       </div>
 
@@ -256,11 +316,14 @@ function ProductRow({ product: p, index, last, hovered, selected, onHover, onTog
       </div>
 
       {/* Price */}
-      <div style={{
-        fontSize: 13, fontWeight: 500, direction: 'ltr', unicodeBidi: 'isolate',
-        color: isInactive ? 'var(--md-on-surface-variant)' : 'var(--md-on-surface)',
-      }}>
-        —
+      <div style={{ fontSize: 13, fontWeight: 500, color: isInactive ? 'var(--md-on-surface-variant)' : 'var(--md-on-surface)' }}>
+        {p.min_price === null ? (
+          <span style={{ color: 'var(--md-on-surface-variant)' }}>—</span>
+        ) : p.max_price !== null ? (
+          <span className="num" style={{ direction: 'ltr', unicodeBidi: 'isolate', display: 'inline-block' }}>₪{p.min_price.toLocaleString('he-IL')} – ₪{p.max_price.toLocaleString('he-IL')}</span>
+        ) : (
+          <span className="num" style={{ direction: 'ltr', unicodeBidi: 'isolate', display: 'inline-block' }}>₪{p.min_price.toLocaleString('he-IL')}</span>
+        )}
       </div>
 
       {/* Status */}
@@ -272,7 +335,7 @@ function ProductRow({ product: p, index, last, hovered, selected, onHover, onTog
       <div style={{ display: 'flex', justifyContent: 'center', gap: 2 }}>
         {hovered ? (
           <>
-            <RowIconBtn icon="edit" title="עריכה" onClick={() => {}} />
+            <RowIconBtn icon="edit" title="עריכה" onClick={() => onEdit?.(p.id)} />
             <RowIconBtn icon="content_copy" title="שכפול" onClick={() => onDuplicate(p.id)} />
             <RowIconBtn icon="delete" title="מחיקה" danger onClick={() => onDelete(p.id)} />
           </>

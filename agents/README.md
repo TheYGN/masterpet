@@ -36,7 +36,7 @@
 ```
 
 ### למה היברידי (Disciplines + Domain Experts)?
-- **Disciplines** = מומחים בטכנולוגיה. 11 סוכנים: frontend, backend, **mobile** (P2), integrations, ai-ml (P2+), **data-analytics**, devops, qa, **security**, **code-reviewer**, **docs-keeper**. עובדים על *כל* מודול.
+- **Disciplines** = מומחים בטכנולוגיה. 14 סוכנים: frontend, backend, **mobile** (P2), integrations, ai-ml (P2+), **data-analytics**, devops, qa, **qa-automation**, **security**, **code-reviewer**, **docs-keeper**, **roadmap-strategist**, **challenger**. עובדים על *כל* מודול.
   דוגמה: backend-engineer בונה schemas, RLS, Edge Functions לכל הפרויקט. security-engineer מבקר את ה-RLS שלו לפני prod. data-analytics-engineer בונה את ה-Materialized Views ל-Dashboards.
 - **Domain Experts** = מומחים בעולם התוכן של הפרויקט הזה. מתייעצים איתם. 6 סוכנים: pet-nutrition, hebrew-rtl, israeli-logistics, saas-billing, **conversational-designer**, **legal-compliance**.
   דוגמה: pet-nutrition-expert עונה "מה זה FEDIAF?" כשbackend-engineer בונה את טבלת התזונה. legal-compliance-expert מאשר flow לפני שmarketing אוטומטי יוצא לאוויר.

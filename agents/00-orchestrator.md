@@ -71,9 +71,12 @@ PRD הוא **מסמך חי**, לא חוזה חתום בדם. הצוות שומר
 
 | Task type | Workflow מומלץ | סוכנים מינימליים |
 |-----------|----------------|-------------------|
-| פיצ׳ר חדש | `workflows/feature-development.md` | PM → UX → Backend → Frontend → QA |
+| פיצ׳ר חדש | `workflows/feature-development.md` | **roadmap-strategist** (בדיקת תלויות) → PM → **challenger** (3 שאלות) → UX → Backend → Frontend → QA |
+| **PRD חדש לפני אישור** | (אין workflow) | **roadmap-strategist** → **challenger** → product-manager |
+| **החלטת priority / סדר PRDs / "מה הבא?"** | (אין workflow) | **roadmap-strategist** בלבד |
+| **החלטה ארכיטקטונית High-risk (hard-coded value, schema core, framework shift)** | (אין workflow) | **challenger** → discipline-relevant |
 | באג | `workflows/bug-fix.md` | QA → Discipline-of-bug → QA |
-| תכנון Sprint | `workflows/sprint-planning.md` | PM + Orchestrator |
+| תכנון Sprint | `workflows/sprint-planning.md` | **roadmap-strategist** → PM + Orchestrator |
 | שינוי schema/RLS | (אין workflow — תזמר ידנית) | backend-engineer + domain-expert + qa |
 | אינטגרציה חיצונית | (אין workflow) | integrations-engineer + domain-expert + devops + qa |
 | שינוי UI בלבד | (אין workflow) | frontend-engineer + ux-designer + hebrew-rtl-expert |
@@ -86,7 +89,7 @@ PRD הוא **מסמך חי**, לא חוזה חתום בדם. הצוות שומר
 | אפליקציית שליחים (P2) | (אין workflow) | **mobile-engineer** → backend → integrations → israeli-logistics → qa |
 | GDPR / זכות עיון / מחיקת חשבון | (אין workflow) | **legal-compliance** → backend → security → qa |
 | RBAC / Audit Log / Permissions | (אין workflow) | legal-compliance → backend → security → qa |
-| **מחיקת פיצ'ר / מודול / טבלה / refactor הרסני** | **`workflows/safe-deletion.md`** | discipline-relevant + code-reviewer + qa (לפי Risk) |
+| **מחיקת פיצ'ר / מודול / טבלה / refactor הרסני** | **`workflows/safe-deletion.md`** | **challenger** → discipline-relevant + code-reviewer + qa (לפי Risk) |
 
 ### שלב 3 — הערכת Risk
 שאל: "אם זה ייכשל, מה הנזק?"
@@ -184,6 +187,8 @@ Agent({
 3. **תעקוב אחרי handoffs.** אחרי שסוכן גמר, הוא חייב להעביר את הפלט שלו לסוכן הבא בשרשרת — אתה אחראי שזה יקרה.
 4. **תזכור את התקציב.** אם המשתמש אמר "תיקון מהיר", אל תרוץ עם 5 סוכנים. תבחר 1-2 מינימליים.
 5. **תזהה כשהדבר לא בתחום שלך.** אם המשתמש שואל שאלה תוכנית טהורה ("מה הצבע הכי טוב?") — תפנה אותו ל-ux-designer ישירות, בלי להעמיד צוות שלם.
+6. **PRD חדש = `challenger` + `roadmap-strategist` חובה לפני product-manager.** אסור לכתוב PRD בלי 3 שאלות challenge מתועדות ובלי בדיקת תלויות. אם דילגת — ה-PRD נחשב טיוטה, לא מאושר.
+7. **שינוי priority בין PRDs קיימים = `roadmap-strategist` חובה.** אסור לקבל החלטה ad-hoc על "בוא נעבוד על X לפני Y" בלי ניתוח תלויות + נימוק שיתועד ב-`work-queue.md`.
 
 ---
 

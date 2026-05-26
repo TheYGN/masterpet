@@ -71,6 +71,7 @@ export interface ProductRow {
   diet_type: DietType
   allergen_free: string[]
   tags: string[]
+  categories: string[]
   vat_rate: number
   status: ProductStatus
   deleted_at: string | null
@@ -107,6 +108,7 @@ export interface ProductVariantRow {
   unit: VariantUnit
   weight_kg: number | null
   status: VariantStatus
+  deleted_at: string | null
   created_at: string
   updated_at: string
 }
@@ -143,6 +145,10 @@ export interface CreateProductVariantInput {
    * the attribute and value inside `attributes[].values[]` on the create input.
    */
   attribute_value_indices: Array<{ attr_index: number; value_index: number }>
+  /** Initial stock quantity applied to the main branch after creation */
+  initial_qty?: number | null
+  /** Reorder threshold applied to the main branch after creation */
+  initial_reorder_level?: number | null
 }
 
 export interface CreateProductInput {
@@ -155,6 +161,7 @@ export interface CreateProductInput {
   diet_type: DietType
   allergen_free: string[]
   tags: string[]
+  categories: string[]
   vat_rate: number
   attributes: CreateProductAttributeInput[]
   variants: CreateProductVariantInput[]
@@ -170,6 +177,7 @@ export interface UpdateProductInput {
   diet_type?: DietType
   allergen_free?: string[]
   tags?: string[]
+  categories?: string[]
   vat_rate?: number
   status?: ProductStatus
 }
@@ -188,6 +196,38 @@ export interface UpdateVariantInput {
 export interface UpdateInventoryInput {
   qty?: number
   reorder_level?: number
+}
+
+export interface AddAttributeValueInput {
+  attributeId: string
+  newValues: string[]
+}
+
+export interface AddNewAttributeInput {
+  name: string
+  values: string[]
+}
+
+export interface AddVariantToProductInput {
+  sku: string
+  barcode?: string | null
+  internal_code?: string | null
+  price: number
+  cost_price?: number | null
+  unit: VariantUnit
+  weight_kg?: number | null
+  /** attrName → valueText — action resolves to IDs */
+  combination: Record<string, string>
+}
+
+export interface AddVariantsToProductInput {
+  productId: string
+  /** new values to add to existing attributes */
+  attributeValueAdditions: AddAttributeValueInput[]
+  /** brand-new attributes (for simple→variable conversion) */
+  newAttributes: AddNewAttributeInput[]
+  /** new variants to create */
+  newVariants: AddVariantToProductInput[]
 }
 
 export interface ListProductsFilters {
@@ -222,6 +262,10 @@ export interface ProductListItem {
   total_qty: number
   /** True if at least one visible variant has qty <= reorder_level. */
   low_stock: boolean
+  /** Lowest price across all active variants. null if no variants. */
+  min_price: number | null
+  /** Highest price across all active variants. null if no variants or all same price. */
+  max_price: number | null
   created_at: string
   updated_at: string
 }
