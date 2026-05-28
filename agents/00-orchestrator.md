@@ -18,14 +18,16 @@ risk_sensitivity: High
 
 קרא את הקבצים הבאים לפני שמתחיל לעבוד — בלעדיהם אתה עיוור:
 
-1. **[../pet_platform_tree.excalidraw](../pet_platform_tree.excalidraw)** — עץ האפיון. ממנו אתה מבין באיזו Phase המשימה ממוקמת.
-2. **[../prd/_shared/data-model.md](../prd/_shared/data-model.md)** — מילון טבלאות חי. כל ישות במערכת מתועדת שם.
-3. **[../prd/_shared/glossary.md](../prd/_shared/glossary.md)** — מילון מונחים. מה זה Tenant, User, Customer, וכו'.
-4. **[./README.md](./README.md)** — DNA של הצוות. רשימת הסוכנים הזמינים.
-5. **[./disciplines/](./disciplines/)** — לסרוק את שמות הקבצים (לא לקרוא את התוכן עד שצריך)
-6. **[./domain-experts/](./domain-experts/)** — לסרוק שמות
-7. **[./workflows/](./workflows/)** — לסרוק שמות; אם יש workflow מתאים, השתמש בו במקום לתזמר מאפס.
-8. **[../designs/DESIGN-SYSTEM.md](../designs/DESIGN-SYSTEM.md)** — מקור-אמת עיצובי לפלטפורמה. **חייב לקרוא לפני כל משימת עיצוב/UI.** מבטל כל palette/typography/spacing שמופיע בסוכנים אחרים אם יש סתירה.
+1. **`C:\Users\yarin\.claude\projects\C--Users-yarin-Desktop-masterpet-masterpet\memory\open_tasks.md`** — state יומיומי: מה פתוח, מה in-progress, מה paused. **חובה לקרוא לפני כל תכנון** — אחרת אתה עלול לתכנן משימה שכבר רצה או חוסם.
+2. **[../pet_platform_tree.excalidraw](../pet_platform_tree.excalidraw)** — עץ האפיון. ממנו אתה מבין באיזו Phase המשימה ממוקמת.
+3. **[../prd/_shared/data-model.md](../prd/_shared/data-model.md)** — מילון טבלאות חי. כל ישות במערכת מתועדת שם.
+4. **[../prd/_shared/glossary.md](../prd/_shared/glossary.md)** — מילון מונחים. מה זה Tenant, User, Customer, וכו'.
+5. **[../prd/_shared/work-queue.md](../prd/_shared/work-queue.md)** — סדר PRDs מתוכנן + תלויות מוצהרות.
+6. **[./README.md](./README.md)** — DNA של הצוות. רשימת הסוכנים הזמינים.
+7. **[./disciplines/](./disciplines/)** — לסרוק את שמות הקבצים (לא לקרוא את התוכן עד שצריך). סוכנים מארוכבים יושבים ב-`./_archive/` ולא רלוונטיים ל-MVP.
+8. **[./domain-experts/](./domain-experts/)** — לסרוק שמות
+9. **[./workflows/](./workflows/)** — לסרוק שמות; אם יש workflow מתאים, השתמש בו במקום לתזמר מאפס.
+10. **[../designs/DESIGN-SYSTEM.md](../designs/DESIGN-SYSTEM.md)** — מקור-אמת עיצובי לפלטפורמה. **חייב לקרוא לפני כל משימת עיצוב/UI.** מבטל כל palette/typography/spacing שמופיע בסוכנים אחרים אם יש סתירה.
 
 ---
 
@@ -182,6 +184,7 @@ Agent({
 ## חוקים אדומים
 
 0. **כל מחיקה של פיצ'ר/קובץ/טבלה — חובה דרך [workflows/safe-deletion.md](workflows/safe-deletion.md).** אסור למחוק בלי MAP מלא + אישור מפורש של המשתמש. גם אם המשתמש ביקש "תמחק את X" — תציג קודם את כל ההפניות ותקבל אישור שוב.
+0a. **עץ אפיון = שני קבצים שחייבים להישאר זהים.** כשעדכנת `prd/feature-tree.md` — תזכיר לירין לעדכן גם את `pet_platform_tree.excalidraw` (וההפך). זה לא אוטומטי — אבל חובה לציין מפורשות בסוף ה-workflow.
 1. **אל תעשה את העבודה הטכנית בעצמך.** אם אתה מוצא את עצמך כותב SQL או JSX — עצור. תזמן סוכן.
 2. **אל תפעיל סוכן בלי קונטקסט.** כל קריאה ל-Agent חייבת לכלול: (א) הפניה לקובץ הסוכן, (ב) הקונטקסט הרלוונטי מהמשימה, (ג) מה הפלט הצפוי.
 3. **תעקוב אחרי handoffs.** אחרי שסוכן גמר, הוא חייב להעביר את הפלט שלו לסוכן הבא בשרשרת — אתה אחראי שזה יקרה.
@@ -255,7 +258,7 @@ Agent({
 ## עדכון open_tasks.md — חובה בסוף כל workflow
 
 **לפני שאתה מסכם**, עדכן את הקובץ:
-`C:\Users\Yarin Golan\.claude\projects\C--Users-Yarin-Golan-Desktop-masterpet\memory\open_tasks.md`
+`C:\Users\yarin\.claude\projects\C--Users-yarin-Desktop-masterpet-masterpet\memory\open_tasks.md`
 
 החוקים:
 - **משימה שהסתיימה** → שנה `status: done` (או הסר אם לא רלוונטי עוד)

@@ -38,6 +38,7 @@ interface CustomersTableProps {
 
 export function CustomersTable({ customers, role, isLoading, onEdit }: CustomersTableProps) {
   const [hoveredId, setHoveredId] = useState<string | null>(null)
+  const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set())
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
 
@@ -45,6 +46,43 @@ export function CustomersTable({ customers, role, isLoading, onEdit }: Customers
   const canDelete = role === 'owner'
 
   const filtered = customers
+
+  const toggleBulk = (id: string) => {
+    setBulkSelected(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  const clearBulk = () => setBulkSelected(new Set())
+
+  const toggleAll = () => {
+    if (bulkSelected.size === filtered.length) {
+      clearBulk()
+    } else {
+      setBulkSelected(new Set(filtered.map(c => c.id)))
+    }
+  }
+
+  const handleBulkDelete = () => {
+    if (!confirm(`למחוק ${bulkSelected.size} לקוחות? הפעולה אינה הפיכה.`)) return
+    startTransition(async () => {
+      let hasError = false;
+      for (const id of bulkSelected) {
+        const res = await deleteCustomerAction(id)
+        if (res?.error) {
+          alert(res.error)
+          hasError = true
+          break
+        }
+      }
+      if (!hasError) {
+        clearBulk()
+        router.refresh()
+      }
+    })
+  }
 
   const handleDelete = (e: React.MouseEvent, customerId: string, name: string) => {
     e.stopPropagation()
@@ -75,7 +113,7 @@ export function CustomersTable({ customers, role, isLoading, onEdit }: Customers
     )
   }
 
-  const COLS = '2fr 1fr 1fr 72px 1fr 1fr 1fr 80px'
+  const COLS = '40px 2fr 1fr 1fr 72px 1fr 1fr 1fr 80px'
 
   return (
     <div style={{
@@ -93,6 +131,20 @@ export function CustomersTable({ customers, role, isLoading, onEdit }: Customers
         padding: '0 16px', gap: 8,
         borderBottom: '1px solid var(--md-outline-variant)',
       }}>
+        <div style={{ display: 'flex', justifyContent: 'center' }}>
+          <span
+            onClick={toggleAll}
+            style={{
+              width: 18, height: 18, borderRadius: 4,
+              border: `2px solid ${bulkSelected.size === filtered.length && filtered.length > 0 ? 'var(--md-primary)' : 'var(--md-outline)'}`,
+              background: bulkSelected.size === filtered.length && filtered.length > 0 ? 'var(--md-primary)' : 'transparent',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer',
+            }}
+          >
+            {bulkSelected.size === filtered.length && filtered.length > 0 && <span className="ms" style={{ fontSize: 14, color: '#fff' }}>check</span>}
+          </span>
+        </div>
         {['שם מלא', 'טלפון', 'עיר', 'ערוץ', 'סניף', 'סטטוס', 'הצטרף', 'פעולות'].map(col => (
           <span key={col} style={{
             fontSize: 11, fontWeight: 600, letterSpacing: 0.4,
@@ -134,6 +186,22 @@ export function CustomersTable({ customers, role, isLoading, onEdit }: Customers
                 opacity: inactive ? 0.75 : 1,
               }}
             >
+              {/* Checkbox */}
+              <div style={{ display: 'flex', justifyContent: 'center' }}>
+                <span
+                  onClick={(e) => { e.stopPropagation(); toggleBulk(c.id) }}
+                  style={{
+                    width: 18, height: 18, borderRadius: 4,
+                    border: `2px solid ${bulkSelected.has(c.id) ? 'var(--md-primary)' : hovered ? 'var(--md-primary)' : 'var(--md-outline)'}`,
+                    background: bulkSelected.has(c.id) ? 'var(--md-primary)' : 'transparent',
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    cursor: 'pointer', flexShrink: 0,
+                  }}
+                >
+                  {bulkSelected.has(c.id) && <span className="ms" style={{ fontSize: 14, color: '#fff' }}>check</span>}
+                </span>
+              </div>
+
               {/* שם + אווטאר */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, overflow: 'hidden' }}>
                 <div style={{
@@ -275,6 +343,54 @@ export function CustomersTable({ customers, role, isLoading, onEdit }: Customers
         })}
       </div>
 
+      {/* Bulk selection bar */}
+      {bulkSelected.size > 0 && (
+        <div style={{
+          position: 'fixed', bottom: 32, left: '50%', transform: 'translateX(-50%)',
+          zIndex: 50,
+          background: '#2E312E',
+          color: '#F0F1EA',
+          borderRadius: 999, padding: '10px 16px',
+          boxShadow: 'var(--shadow-3)',
+          display: 'flex', alignItems: 'center', gap: 16,
+        }}>
+          <button onClick={clearBulk} style={{
+            width: 32, height: 32, borderRadius: '50%', border: 'none',
+            background: 'rgba(255,255,255,0.08)', color: '#fff',
+            cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <span className="ms" style={{ fontSize: 18 }}>close</span>
+          </button>
+          <span style={{ fontSize: 14, fontWeight: 600 }}>
+            <span className="num">{bulkSelected.size}</span> לקוחות נבחרו
+          </span>
+          <div style={{ width: 1, height: 24, background: 'rgba(255,255,255,0.2)' }} />
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={toggleAll} style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              height: 32, padding: '0 14px', borderRadius: 999,
+              background: 'rgba(255,255,255,0.10)',
+              color: '#F0F1EA',
+              border: 'none',
+              cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 500,
+            }}>
+              <span className="ms" style={{ fontSize: 16 }}>select_all</span>
+              בחר הכל
+            </button>
+            <button onClick={handleBulkDelete} style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              height: 32, padding: '0 14px', borderRadius: 999,
+              background: 'rgba(179,38,30,0.20)',
+              color: '#F9DEDC',
+              border: '1px solid rgba(249,222,220,0.30)',
+              cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 500,
+            }}>
+              <span className="ms" style={{ fontSize: 16 }}>delete</span>
+              מחיקה
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -20,7 +20,7 @@ risk_sensitivity: Medium
 1. [pet_platform_tree.excalidraw](../../pet_platform_tree.excalidraw) — מודולים "Dashboards לפי תפקיד" + "Custom Reports Builder" (P3)
 2. [backend-engineer](backend-engineer.md) — חובה. אתה לא משנה schema לבד; הוא הבעלים של DDL
 3. [domain-experts/saas-billing-expert](../domain-experts/saas-billing-expert.md) — להגדרת MRR/ARR/Churn/LTV
-4. [domain-experts/pet-nutrition-expert](../domain-experts/pet-nutrition-expert.md) — להבין מה זה "ק״ג ליום" ואיך הוא נצרך
+4. [domain-experts/pet-nutrition-expert](../_archive/pet-nutrition-expert.md) *(בארכיון — להחזיר ב-Phase 2 אם דשבורד תזונה)*
 5. [frontend-engineer](frontend-engineer.md) — לסכם על libs של charts (Recharts/Tremor)
 
 ## Stack & Conventions

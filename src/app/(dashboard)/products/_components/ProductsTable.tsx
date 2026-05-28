@@ -33,6 +33,14 @@ export function ProductsTable({ products, total = products.length, page = 1, onP
 
   const clearBulk = () => setBulkSelected(new Set())
 
+  const toggleAll = () => {
+    if (bulkSelected.size === products.length) {
+      clearBulk()
+    } else {
+      setBulkSelected(new Set(products.map(p => p.id)))
+    }
+  }
+
   const handleDelete = (productId: string) => {
     if (!confirm('האם למחוק את המוצר? הפעולה אינה הפיכה.')) return
     startTransition(async () => {
@@ -62,7 +70,10 @@ export function ProductsTable({ products, total = products.length, page = 1, onP
         opacity: isPending ? 0.6 : 1,
         transition: 'opacity 150ms ease',
       }}>
-        <TableHeader />
+        <TableHeader 
+          isAllSelected={bulkSelected.size > 0 && bulkSelected.size === products.length} 
+          onToggleAll={toggleAll} 
+        />
         <div>
           {products.map((p, i) => (
             <ProductRow
@@ -94,7 +105,29 @@ export function ProductsTable({ products, total = products.length, page = 1, onP
 
       {/* Bulk selection bar */}
       {bulkSelected.size > 0 && (
-        <BulkBar count={bulkSelected.size} onClear={clearBulk} />
+        <BulkBar 
+          count={bulkSelected.size} 
+          onClear={clearBulk} 
+          onSelectAll={toggleAll}
+          onDelete={() => {
+            if (!confirm(`האם למחוק ${bulkSelected.size} מוצרים?`)) return
+            startTransition(async () => {
+              let hasError = false;
+              for (const id of bulkSelected) {
+                const res = await deleteProductAction(id)
+                if (res?.error) {
+                  alert(res.error)
+                  hasError = true
+                  break
+                }
+              }
+              if (!hasError) {
+                clearBulk()
+                router.refresh()
+              }
+            })
+          }}
+        />
       )}
 
       {/* Lightbox */}
@@ -145,7 +178,7 @@ export function ProductsTable({ products, total = products.length, page = 1, onP
 }
 
 // ---- Table Header ----
-function TableHeader() {
+function TableHeader({ isAllSelected, onToggleAll }: { isAllSelected?: boolean, onToggleAll?: () => void }) {
   const cells = [
     { label: '', sortable: false, align: 'center' },
     { label: 'תמונה', sortable: false, align: 'center' },
@@ -174,7 +207,18 @@ function TableHeader() {
           minWidth: 0,
         }}>
           {i === 0 ? (
-            <span style={{ width: 18, height: 18, borderRadius: 4, border: '2px solid var(--md-outline)', display: 'inline-block' }} />
+            <span
+              onClick={onToggleAll}
+              style={{
+                width: 18, height: 18, borderRadius: 4,
+                border: `2px solid ${isAllSelected ? 'var(--md-primary)' : 'var(--md-outline)'}`,
+                background: isAllSelected ? 'var(--md-primary)' : 'transparent',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer',
+              }}
+            >
+              {isAllSelected && <span className="ms" style={{ fontSize: 14, color: '#fff' }}>check</span>}
+            </span>
           ) : (
             <>
               <span>{c.label}</span>
@@ -469,13 +513,14 @@ function PageArrow({ icon, disabled, onClick }: { icon: string; disabled: boolea
 }
 
 // ---- Bulk Selection Bar ----
-function BulkBar({ count, onClear }: { count: number; onClear: () => void }) {
+function BulkBar({ count, onClear, onSelectAll, onDelete }: { count: number; onClear: () => void; onSelectAll?: () => void; onDelete?: () => void }) {
   return (
     <div style={{
-      background: 'var(--md-inverse-surface)',
-      color: 'var(--md-inverse-on-surface)',
+      position: 'fixed', bottom: 32, left: '50%', transform: 'translateX(-50%)', zIndex: 50,
+      background: '#2E312E',
+      color: '#F0F1EA',
       borderRadius: 999, padding: '10px 16px',
-      boxShadow: 'var(--shadow-2)',
+      boxShadow: 'var(--shadow-3)',
       display: 'flex', alignItems: 'center', gap: 16,
     }}>
       <button onClick={onClear} style={{
@@ -490,10 +535,20 @@ function BulkBar({ count, onClear }: { count: number; onClear: () => void }) {
       </span>
       <div style={{ flex: 1 }} />
       <div style={{ display: 'flex', gap: 8 }}>
+        <button onClick={onSelectAll} style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+          height: 32, padding: '0 14px', borderRadius: 999,
+          background: 'rgba(255,255,255,0.10)',
+          color: '#F0F1EA',
+          border: 'none',
+          cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 500,
+        }}>
+          <span className="ms" style={{ fontSize: 16 }}>select_all</span>
+          בחר הכל
+        </button>
         {[
           { icon: 'toggle_on', label: 'הפעל', danger: false },
           { icon: 'toggle_off', label: 'כבה', danger: false },
-          { icon: 'delete', label: 'מחק', danger: true },
         ].map(({ icon, label, danger }) => (
           <button key={label} style={{
             display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -507,6 +562,17 @@ function BulkBar({ count, onClear }: { count: number; onClear: () => void }) {
             {label}
           </button>
         ))}
+        <button onClick={onDelete} style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+          height: 32, padding: '0 14px', borderRadius: 999,
+          background: 'rgba(179,38,30,0.20)',
+          color: '#F9DEDC',
+          border: '1px solid rgba(249,222,220,0.30)',
+          cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 500,
+        }}>
+          <span className="ms" style={{ fontSize: 16 }}>delete</span>
+          מחק
+        </button>
       </div>
     </div>
   )

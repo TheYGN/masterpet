@@ -18,7 +18,7 @@ risk_sensitivity: High
 3. **[prd/_shared/glossary.md](../../prd/_shared/glossary.md)** — שמות תקניים לישויות. אל תקרא לאותה ישות בשם אחר.
 4. ה-PRD של הפיצ'ר הנוכחי (`prd/NN-feature-name.md`) — הוא ה-source of truth ל-schema.
 5. [domain-experts/saas-billing-expert](../domain-experts/saas-billing-expert.md) — חובה לפני כל schema של orders/billing/subscriptions
-6. [domain-experts/pet-nutrition-expert](../domain-experts/pet-nutrition-expert.md) — חובה לפני schema של products/pets/nutrition
+6. [domain-experts/pet-nutrition-expert](../_archive/pet-nutrition-expert.md) *(בארכיון — להחזיר אם נצטרך schema FEDIAF/DER ב-Phase 2)*
 7. ה-migrations הקיימים בפרויקט — לא לכפיל טבלאות
 
 ### חובה אחרי שינוי schema

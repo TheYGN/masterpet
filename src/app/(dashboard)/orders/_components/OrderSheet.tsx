@@ -86,7 +86,10 @@ export function OrderSheet({ open, branchId, onClose, onCreated }: Props) {
   }
 
   const addProduct = (p: ProductListItem) => {
-    if (!p.min_price) return
+    if (p.min_price == null) {
+      setError('למוצר זה אין מחיר מוגדר — יש להגדיר מחיר בקטלוג המוצרים')
+      return
+    }
     setItems(prev => [...prev, {
       localId: crypto.randomUUID(),
       variant_id: null,
@@ -355,12 +358,12 @@ export function OrderSheet({ open, branchId, onClose, onCreated }: Props) {
 
                 {showProductDrop && (
                   <div style={{
-                    position: 'absolute', bottom: '100%', insetInlineStart: 0, insetInlineEnd: 0,
-                    marginBottom: 4, zIndex: 100,
+                    position: 'absolute', top: '100%', insetInlineStart: 0, insetInlineEnd: 0,
+                    marginTop: 4, zIndex: 100,
                     background: 'var(--md-surface-container-lowest)',
                     border: '1px solid var(--md-outline-variant)',
                     borderRadius: 12, overflow: 'hidden',
-                    boxShadow: '0 -4px 16px rgba(0,0,0,0.12)',
+                    boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
                   }}>
                     {/* Search input */}
                     <div style={{ padding: '8px', borderBottom: '1px solid var(--md-outline-variant)' }}>
@@ -406,14 +409,14 @@ export function OrderSheet({ open, branchId, onClose, onCreated }: Props) {
                         <button
                           key={p.id}
                           onClick={() => addProduct(p)}
-                          disabled={!p.min_price}
+                          disabled={p.min_price == null}
                           style={{
                             width: '100%', height: 56, padding: '0 12px',
                             border: 'none', borderBottom: '1px solid var(--md-outline-variant)',
-                            background: 'transparent', cursor: p.min_price ? 'pointer' : 'not-allowed',
+                            background: 'transparent', cursor: p.min_price == null ? 'not-allowed' : 'pointer',
                             display: 'flex', alignItems: 'center', gap: 10,
                             textAlign: 'right', fontFamily: 'inherit',
-                            opacity: p.min_price ? 1 : 0.5,
+                            opacity: p.min_price == null ? 0.5 : 1,
                           }}>
                           <span style={{
                             width: 32, height: 32, borderRadius: 8, flexShrink: 0,
@@ -431,8 +434,11 @@ export function OrderSheet({ open, branchId, onClose, onCreated }: Props) {
                             {p.low_stock && (
                               <div style={{ fontSize: 11, color: '#A65F00' }}>מלאי נמוך</div>
                             )}
+                            {p.min_price == null && (
+                              <div style={{ fontSize: 11, color: 'var(--md-error)' }}>אין מחיר מוגדר</div>
+                            )}
                           </div>
-                          {p.min_price && (
+                          {p.min_price != null && (
                             <span className="currency num" style={{
                               fontSize: 14, fontWeight: 600, color: 'var(--md-on-surface)', flexShrink: 0,
                             }}>
@@ -691,8 +697,8 @@ function FooterBtn({ variant, icon, label, disabled, onClick }: {
         opacity: disabled ? 0.7 : 1, whiteSpace: 'nowrap',
         transition: 'opacity 100ms ease',
       }}>
-      <span className="ms" style={{ fontSize: 20 }}>{icon}</span>
       <span>{label}</span>
+      <span className="ms" style={{ fontSize: 20 }}>{icon}</span>
     </button>
   )
 }

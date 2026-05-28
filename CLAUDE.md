@@ -24,8 +24,9 @@ agents/00-orchestrator.md
 
 - **`agents/00-orchestrator.md`** — ראש הצוות, מתזמן את כולם
 - **`agents/README.md`** — תיאור מלא של ה-DNA + ארכיטקטורת 3 השכבות
-- **`agents/disciplines/`** — 14 מומחים טכנולוגיים (Frontend, Backend, Mobile, Data-Analytics, Integrations, AI/ML, DevOps, **QA**, **QA-Automation**, Security, Code-Reviewer, Docs-Keeper, **Roadmap-Strategist**, **Challenger**) — **qa-automation** מבצע בדיקות runtime אוטומטיות (Preview + Supabase logs + Vercel logs) במקום שירין יבדוק ידנית. **roadmap-strategist** מסדר תור PRDs ומזהה תלויות נסתרות לפני שהן חוסמות. **challenger** הוא devil's advocate — שואל 3 שאלות לפני כל החלטה High-risk
-- **`agents/domain-experts/`** — 6 מומחי תוכן (Pet-Nutrition, Hebrew-RTL, Israeli-Logistics, SaaS-Billing, Conversational-Designer, Legal-Compliance)
+- **`agents/disciplines/`** — 12 מומחים טכנולוגיים פעילים (Frontend, Backend, UI-Implementer, Data-Analytics, DevOps, **QA**, **QA-Automation**, Security, Code-Reviewer, Docs-Keeper, **Roadmap-Strategist**, **Challenger**). **qa-automation** מבצע בדיקות runtime אוטומטיות. **roadmap-strategist** מסדר תור PRDs. **challenger** הוא devil's advocate ל-High-risk
+- **`agents/domain-experts/`** — 4 מומחי תוכן פעילים (Hebrew-RTL, Israeli-Logistics, SaaS-Billing, Legal-Compliance)
+- **`agents/_archive/`** — סוכנים שאורכבו ב-2026-05-26 (לא פעילים ב-MVP): `pet-nutrition-expert`, ובתת-תיקייה `phase-2/`: `integrations-engineer`, `mobile-engineer`, `ai-ml-engineer`, `conversational-designer`. ראה `_archive/phase-2/README.md` להחזרה לפעילות
 - **`agents/product/`** — Product Manager + UX Designer
 - **`agents/workflows/`** — תרחישים מוכנים (feature-development, bug-fix, sprint-planning)
 
@@ -34,7 +35,7 @@ agents/00-orchestrator.md
 - **`pet_platform_tree.excalidraw`** — **מקור-האמת של עץ האפיון** (ראה למטה: "עץ האפיון הוויזואלי"). כל סוכן קורא אותו לפני שהוא פועל
 - **`prd/feature-tree.md`** — נגזרת טקסטואלית של ה-Excalidraw. מתעדכן ידנית כשהעץ הוויזואלי משתנה
 - **`skills/agent-flow-creator/`** — הסקיל שיצר את הצוות (לפרויקטים עתידיים)
-- **`designs/`** — מסכים מעוצבים. ייווצר על-פי הצורך לפי המוסכמה ב-`agents/disciplines/ui-implementer-designs-convention.md`
+- **`designs/`** — מסכים מעוצבים. המוסכמה (מבנה תיקייה + git protocol + סדר עדיפות קריאה) מתועדת ב-`agents/disciplines/ui-implementer.md` §תיקיית designs/
 
 ## עץ האפיון הוויזואלי — מקור-אמת לחשיבת מוצר
 
@@ -56,8 +57,10 @@ node -e "const d=JSON.parse(require('fs').readFileSync('pet_platform_tree.excali
 
 ## חוקים מהירים
 
+- **PRD בפרויקט הזה — תמיד דרך `masterpet-prd` skill בלבד.** אסור להפעיל את הסקילים הגלובליים `prd`, `prd-generator`, או `anthropic-skills:prd-generator` בפרויקט MasterPet — הם לא מכירים את עץ האפיון, את ה-PRDs הקיימים, ואת הפורמט שלנו. `masterpet-prd` תמיד מנצח על trigger collision.
+- **סנכרון עץ אפיון — חובה דו-כיוונית.** כשמשנים את `prd/feature-tree.md` — חייבים לעדכן גם את `pet_platform_tree.excalidraw` (וההפך). השניים חייבים תמיד לתאר את אותו מצב. אם זוהה drift — להריץ Diff Check ולתקן לפני שממשיכים בעבודה אחרת. נכון ל-2026-05-26 — קיים punch-list ידני ב-`prd/_shared/excalidraw-sync.md` שמחכה לעדכון Excalidraw.
 - אל תכתוב schema/RLS בלי `backend-engineer` + domain-expert רלוונטי
-- אל תכתוב טקסט ללקוח (WhatsApp/SMS/Email) בלי `hebrew-rtl-expert` + `conversational-designer`
+- אל תכתוב טקסט ללקוח (WhatsApp/SMS/Email) בלי `hebrew-rtl-expert` (`conversational-designer` בארכיון — להחזיר כשמתחילים זרימות multi-turn)
 - אל תבצע merge ל-main בלי `code-reviewer`
 - אל תיגע ב-billing/payments בלי `saas-billing-expert` + `security-engineer` + `legal-compliance-expert`
 - אל תעצב מסך / תעדכן עיצוב בלי `agents/workflows/design-screen.md` + `designs/DESIGN-SYSTEM.md`
@@ -67,17 +70,16 @@ node -e "const d=JSON.parse(require('fs').readFileSync('pet_platform_tree.excali
 
 ## Troy Skills — ארגז הכלים של טרוי
 
-לטרוי יש 5 סקילים פעילים בתיקיית `.claude/skills/troy-*/SKILL.md` (זה המיקום שClaude Code סורק אוטומטית). הפעל כל אחד לפי הטריגרים:
+לטרוי יש 4 סקילים פעילים בתיקיית `.claude/skills/troy-*/SKILL.md` (זה המיקום ש-Claude Code סורק אוטומטית). הפעל כל אחד לפי הטריגרים:
 
 | Skill | קובץ | מתי להפעיל |
 |-------|------|-----------|
-| **troy-intake** | `.claude/skills/troy-intake/SKILL.md` | כל משימה חדשה שדורשת תכנון — לפני כל dispatch |
-| **troy-dispatch** | `.claude/skills/troy-dispatch/SKILL.md` | אחרי שירין אישר תוכנית — להפעיל סוכנים |
+| **troy-execute** | `.claude/skills/troy-execute/SKILL.md` | כל משימה חדשה — מנתח, מסווג, ומבצע ישר (Low-risk) או מציג תוכנית לאישור ואז מבצע (Medium/High-risk). מחליף את troy-intake + troy-dispatch הישנים |
 | **troy-status** | `.claude/skills/troy-status/SKILL.md` | "מה הסטטוס?", "איפה אנחנו?", "מה פתוח?", "מה הצעד הבא?" |
 | **troy-handoff** | `.claude/skills/troy-handoff/SKILL.md` | אחרי כל סוכן שסיים — לפני שהסוכן הבא מתחיל |
 | **troy-retro** | `.claude/skills/troy-retro/SKILL.md` | "סיימנו", "תסכם", סוף workflow משמעותי |
 
-**סדר עבודה תקין:** `troy-intake` → אישור → `troy-dispatch` → (לכל handoff: `troy-handoff`) → `troy-retro`
+**סדר עבודה תקין:** `troy-execute` (כולל אישור פנימי אם Medium/High-risk) → (לכל handoff: `troy-handoff`) → `troy-retro`
 
 ## Trigger keywords לעיצוב (חובה)
 
@@ -97,7 +99,7 @@ node -e "const d=JSON.parse(require('fs').readFileSync('pet_platform_tree.excali
 
 **בתחילת כל שיחה חדשה, לפני שאתה מגיב להודעה הראשונה של המשתמש:**
 
-1. קרא את הקובץ `C:\Users\Yarin Golan\.claude\projects\C--Users-Yarin-Golan-Desktop-masterpet\memory\open_tasks.md`
+1. קרא את הקובץ `C:\Users\yarin\.claude\projects\C--Users-yarin-Desktop-masterpet-masterpet\memory\open_tasks.md`
 2. אם יש בו משימות פתוחות (status: open / in-progress) — הצג אותן בקצרה למשתמש לפני שאתה עונה על ההודעה שלו:
    - כותרת המשימה
    - סטטוס + תאריך עדכון אחרון

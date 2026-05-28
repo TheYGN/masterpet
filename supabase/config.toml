@@ -1,0 +1,10 @@
+project_id = "masterpet"
+
+[functions.fn-payplus-create-link]
+verify_jwt = true
+
+[functions.fn-payplus-webhook]
+verify_jwt = false
+
+[functions.fn-subscription-cron]
+verify_jwt = false

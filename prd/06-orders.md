@@ -2,7 +2,7 @@
 
 **פאזה:** MVP  
 **תאריך:** 2026-05-26  
-**סטטוס:** Draft  
+**סטטוס:** Done — DB + Actions + UI + Edge Functions + QA Automation (2026-05-26)  
 **תלוי ב:** PRD #1 (Auth), PRD #3 (Products), PRD #5 (Customers)  
 **חוסם:** PRD #2 (Inbox), PRD #7 (Notifications), PRD #8 (Loyalty)
 

@@ -92,9 +92,9 @@ Frontend Engineer **לא מתחיל** עד שה-`API-contract.md` קיים ב-PR
 
 ---
 
-### Stage 4: Integrations (integrations-engineer, אם נדרש)
+### Stage 4: Integrations (integrations-engineer, אם נדרש — Phase 2)
 **Trigger**: יש שירות חיצוני בפיצ׳ר
-**מי**: `disciplines/integrations-engineer.md`
+**מי**: `_archive/phase-2/integrations-engineer.md` *(בארכיון — להחזיר ל-`disciplines/` כשמתחילים אינטגרציה רצינית)*
 **Output**: Webhook handlers + API clients + retry logic
 
 **אם רלוונטי**:
@@ -146,7 +146,7 @@ Frontend Engineer **לא מתחיל** עד שה-`API-contract.md` קיים ב-PR
 
 ### Stage 6: AI/ML (אם רלוונטי — Phase 2+)
 **Trigger**: הפיצ׳ר כולל prediction / recommendation / NLP
-**מי**: `disciplines/ai-ml-engineer.md`
+**מי**: `_archive/phase-2/ai-ml-engineer.md` *(בארכיון — להחזיר ל-`disciplines/` כשמתחילים פיצ'רי AI)*
 **Output**: Prompts + models + cost estimate
 
 **Checklist**:

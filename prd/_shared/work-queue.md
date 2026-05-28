@@ -2,7 +2,7 @@
 
 > **לקריאה ראשונה בכל סשן חדש.** הקובץ הזה מתאר איפה אנחנו, מה נעשה, ומה הצעד הבא.
 >
-> **עדכון אחרון:** 2026-05-26 — PRD #5 (Customers) הושלם (קוד+DB, ממתין לאימות e2e). PRD #6 (Orders) — Draft נכתב.
+> **עדכון אחרון:** 2026-05-26 — PRD #5 (Customers) Done (קוד+DB+עיצובים, ממתין לאימות e2e). PRD #6 (Orders) Done — DB + 11 Server Actions + UI + 3 Edge Functions + QA Automation passed. ניקיון צוות הסוכנים בוצע (5 ארוכבו, troy-intake+dispatch מוזגו ל-troy-execute).
 
 ---
 
@@ -18,8 +18,8 @@
 
 ### תשתית
 - [x] Supabase project + Next.js + shadcn/ui + Tailwind RTL + GitHub + Vercel
-- [x] צוות 18 סוכנים מובנה תחת `agents/`
-- [x] עץ אפיון: `prd/feature-tree.md` (v6) + `pet_platform_tree.excalidraw`
+- [x] צוות סוכנים מובנה תחת `agents/` (12 disciplines + 4 domain-experts + 2 product) — אורכבו 5 סוכני Phase 2 ב-`agents/_archive/` ב-2026-05-26
+- [x] עץ אפיון: `prd/feature-tree.md` (v8) + `pet_platform_tree.excalidraw`
 
 ### תשתית תיעוד (2026-05-19)
 - [x] `prd/_shared/data-model.md` — מילון טבלאות חי
@@ -53,8 +53,8 @@
 | 1 | **Auth + RBAC + קליטת עסק** | — | — | 1-2 | ✅ Done |
 | 3 | **Products + מלאי** | טקסונומיה, אריזות, מלאי רב-סניפי | #1 | 3-4 | ✅ Done (2026-05-25) |
 | 4 | **CSV/Excel Import Engine** | מנגנון ייבוא גנרי — Products ראשון, Customers שני | #3 | 3-4 | ✅ Done (2026-05-25) |
-| 5 | **Customers + Pet Profiles** | לקוחות, חיות, אלרגיות, קצב צריכה | #1, #4 | 5-6 | ✅ Done — DB (3,097 שורות) + קוד + עיצובים. טרם אומת end-to-end |
-| 6 | **Orders Management + Subscription** | הזמנה חד-פעמית + מנוי, סטטוסים, קישור תשלום PayPlus | #1, #3, #5 | 5-6 | 🔄 Draft נכתב (2026-05-26) |
+| 5 | **Customers + Pet Profiles** | לקוחות, חיות, אלרגיות, קצב צריכה | #1, #4 | 5-6 | ✅ Done — DB (3,097 שורות) + קוד + עיצובים. ממתין לאימות e2e |
+| 6 | **Orders Management + Subscription** | הזמנה חד-פעמית + מנוי, סטטוסים, קישור תשלום PayPlus | #1, #3, #5 | 5-6 | ✅ Done — DB + 11 Actions + UI + Edge Functions + QA (2026-05-26) |
 | 2 | **Order Inbox** | Green API, טלפון, WooCommerce, נירמול, Dedup | #3, #5, #6 | 5-6 | ⏸ דחוי — חסום ב-#5+#6 |
 | 7 | **Notification + Rule Engine** | Green API/SMS/Email, templates, If/Then | #1, #5, #6 | 5-6 | ממתין ל-#6 |
 | 8 | **Loyalty Engine** | נקודות/קרדיט, הנחת מנוי — הכל configurable | #1, #5, #6 | 5-6 | ממתין ל-#6 |
@@ -127,4 +127,4 @@
 
 > "טרוי, מה השלב הבא?"
 
-**הצעד הבא:** PRD #6 — Orders Management. Draft מוכן ב-`prd/06-orders.md`. לאמת PRD #5 e2e ולהתחיל DB migrations של #6.
+**הצעד הבא:** לאמת PRD #5 (Customers) e2e → ואז PRD #2 (Inbox) — Green API + WhatsApp → הזמנה אוטומטית.

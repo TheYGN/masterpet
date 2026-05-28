@@ -37,7 +37,9 @@ yarn-error.log*
 .vercel
 
 # claude / local dev artifacts
-.claude/
+.claude/*
+!.claude/skills/
+.claude/settings.local.json
 .playwright-mcp/
 /*.png
 

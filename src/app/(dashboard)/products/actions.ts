@@ -1236,7 +1236,7 @@ export const deleteProductAction = withAuth(
 
     if (error) {
       console.error('[deleteProduct] soft delete failed', error)
-      return { error: GENERIC_ERROR }
+      return { error: `שגיאת מסד נתונים: ${error.message || error.details || GENERIC_ERROR}` }
     }
 
     await writeAudit({
