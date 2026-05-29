@@ -48,5 +48,8 @@ yarn-error.log*
 next-env.d.ts
 .env.local
 
+# office temp lock files (e.g. ~$file.xlsx — created while a file is open)
+~$*
+
 .vercel
 .env*.local
