@@ -12,6 +12,8 @@ import type {
   ImportResult,
   ImportRowData,
 } from './import-types'
+import { normalizeImportRows } from './product-normalization'
+import type { NormalizedProduct, NormalizedVariant } from './product-normalization'
 import type {
   ActionResult,
   AddVariantsToProductInput,
@@ -1253,6 +1255,154 @@ export const deleteProductAction = withAuth(
 )
 
 // ============================================================================
+// 9b. bulkDeleteProductsAction — owner only (batch soft delete)
+//     Replaces the old frontend loop of N×deleteProductAction round-trips.
+//     Soft-deletes in chunks of BULK_DELETE_BATCH_SIZE via .in('id', batch).
+// ============================================================================
+
+/** Max ids per UPDATE statement — keeps the `id IN (...)` list bounded. */
+const BULK_DELETE_BATCH_SIZE = 50
+
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size))
+  return out
+}
+
+export const bulkDeleteProductsAction = withAuth(
+  ['owner'],
+  async (
+    session,
+    productIds: string[]
+  ): Promise<ActionResult<{ deletedIds: string[]; failedIds: string[] }>> => {
+    if (!Array.isArray(productIds) || productIds.length === 0) {
+      return { error: 'לא נבחרו מוצרים למחיקה' }
+    }
+
+    // Dedupe + drop falsy ids before touching the DB.
+    const ids = [...new Set(productIds.filter((id): id is string => Boolean(id)))]
+    if (ids.length === 0) return { error: 'לא נבחרו מוצרים למחיקה' }
+
+    const supabase = await getAuthenticatedClient()
+    const deletedAt = new Date().toISOString()
+
+    const deletedIds: string[] = []
+    const failedIds: string[] = []
+
+    // RLS (products_tenant_isolation) already fences by tenant_id, so a malicious
+    // id from another tenant simply won't match — no manual tenant filter needed.
+    // We still scope by `.is('deleted_at', null)` so already-deleted rows are
+    // not "re-deleted" (and don't inflate the success count).
+    for (const batch of chunk(ids, BULK_DELETE_BATCH_SIZE)) {
+      const { data, error } = await supabase
+        .from('products')
+        .update({ deleted_at: deletedAt })
+        .in('id', batch)
+        .is('deleted_at', null)
+        .select('id')
+
+      if (error) {
+        console.error('[bulkDeleteProducts] batch update failed', error)
+        failedIds.push(...batch)
+        continue
+      }
+
+      const okIds = new Set((data ?? []).map((r) => r.id as string))
+      for (const id of batch) {
+        if (okIds.has(id)) deletedIds.push(id)
+        else failedIds.push(id) // not found / wrong tenant / already deleted
+      }
+    }
+
+    if (deletedIds.length === 0) {
+      return { error: failedIds.length > 0 ? 'אף מוצר לא נמחק' : GENERIC_ERROR }
+    }
+
+    // Audit: count + ids only — we intentionally do NOT fetch 254 names (costly).
+    await writeAudit({
+      action: 'product.bulk_deleted',
+      session,
+      entityType: 'product',
+      entityId: null,
+      metadata: { count: deletedIds.length, ids: deletedIds },
+    })
+
+    revalidatePath(PRODUCTS_PATH)
+    return { data: { deletedIds, failedIds } }
+  }
+)
+
+// ============================================================================
+// 9c. restoreProductsAction — owner only (Undo for bulk/single delete)
+//     Sets deleted_at = null in batches.
+//
+//     RLS NOTE (decision documented in the summary / data-model.md):
+//     The LIVE products_tenant_isolation policy is `tenant_id = current_tenant_id()`
+//     ONLY — it does NOT filter on `deleted_at`. (The deleted_at IS NULL filter
+//     lives in application queries, not RLS.) Therefore getAuthenticatedClient
+//     CAN see and UPDATE soft-deleted rows, and restore works without service_role.
+//     We add an explicit `.eq('tenant_id', ...)` belt-and-suspenders fence anyway.
+// ============================================================================
+
+export const restoreProductsAction = withAuth(
+  ['owner'],
+  async (
+    session,
+    productIds: string[]
+  ): Promise<ActionResult<{ restoredIds: string[]; failedIds: string[] }>> => {
+    if (!Array.isArray(productIds) || productIds.length === 0) {
+      return { error: 'לא נבחרו מוצרים לשחזור' }
+    }
+
+    const ids = [...new Set(productIds.filter((id): id is string => Boolean(id)))]
+    if (ids.length === 0) return { error: 'לא נבחרו מוצרים לשחזור' }
+
+    const tenantId = session.profile.tenant_id
+    const supabase = await getAuthenticatedClient()
+
+    const restoredIds: string[] = []
+    const failedIds: string[] = []
+
+    for (const batch of chunk(ids, BULK_DELETE_BATCH_SIZE)) {
+      const { data, error } = await supabase
+        .from('products')
+        .update({ deleted_at: null })
+        .in('id', batch)
+        .eq('tenant_id', tenantId)
+        .not('deleted_at', 'is', null)
+        .select('id')
+
+      if (error) {
+        console.error('[restoreProducts] batch update failed', error)
+        failedIds.push(...batch)
+        continue
+      }
+
+      const okIds = new Set((data ?? []).map((r) => r.id as string))
+      for (const id of batch) {
+        if (okIds.has(id)) restoredIds.push(id)
+        else failedIds.push(id) // not found / wrong tenant / not deleted
+      }
+    }
+
+    if (restoredIds.length === 0) {
+      return { error: failedIds.length > 0 ? 'אף מוצר לא שוחזר' : GENERIC_ERROR }
+    }
+
+    await writeAudit({
+      action: 'product.restored',
+      session,
+      entityType: 'product',
+      entityId: null,
+      metadata: { count: restoredIds.length, ids: restoredIds },
+    })
+
+    revalidatePath(PRODUCTS_PATH)
+    return { data: { restoredIds, failedIds } }
+  }
+)
+
+// ============================================================================
 // 9. duplicateProductAction — owner only
 // ============================================================================
 
@@ -1483,8 +1633,8 @@ export const duplicateProductAction = withAuth(
 
 const IMPORT_BATCH_SIZE = 50
 
-type RowOutcome =
-  | { ok: true; inventoryUpdate?: { variantId: string; qty: number; reorderLevel: number } }
+type VariantOutcome =
+  | { ok: true; attached: boolean; linkedValueIds?: string[]; inventoryUpdate?: { variantId: string; qty: number; reorderLevel: number } }
   | { ok: false; rowIndex: number; sku?: string; reason: string }
 
 export const importProductsAction = withAuth(
@@ -1510,161 +1660,325 @@ export const importProductsAction = withAuth(
 
     if (!defaultBranch) return { error: 'לא נמצא סניף פעיל לטנאנט' }
 
-    // Process one row — returns outcome. Inventory updates are deferred.
-    async function processRow(row: ImportRowData, rowIndex: number): Promise<RowOutcome> {
-      // --- INSERT product -------------------------------------------------------
-      const { data: product, error: productErr } = await supabase
-        .from('products')
-        .insert({
-          tenant_id:     tenantId,
-          name:          row.product.name,
-          description:   row.product.description ?? null,
-          supplier_name: row.product.supplier_name ?? null,
-          animal_type:   row.product.animal_type ?? 'other',
-          age_group:     row.product.age_group ?? 'all',
-          diet_type:     row.product.diet_type ?? 'regular',
-          allergen_free: [],
-          tags:          row.product.tags ?? [],
-          categories:    row.product.categories ?? [],
-          vat_rate:      row.product.vat_rate ?? 18,
-        })
-        .select('id')
-        .single()
+    // --- Data Normalization Hook ----------------------------------------------
+    // Fold flat rows into Parent → Variants[] (same category + dimension unit,
+    // names sharing a ≥2-word prefix). Singletons come back as 1-variant parents,
+    // so this is loss-free: Σ variants === rows.length. The per-variant flavor/size
+    // are mapped onto the project's existing EAV tables (same as manual creation).
+    const groups = normalizeImportRows(rows)
 
-      if (productErr || !product)
-        return { ok: false, rowIndex, sku: row.variant.sku, reason: productErr?.message ?? 'שגיאה בשמירת המוצר' }
+    // Attribute names the EAV layer uses for the two import dimensions.
+    const FLAVOR_ATTR = 'טעם'
+    const SIZE_ATTR = 'גודל'
+    const flavorOf = (a: NormalizedVariant['attributes']): string => a.flavor.trim()
+    // quantity + unit → one attribute_value string, e.g. "100 gram" / "100" / "gram".
+    const sizeOf = (a: NormalizedVariant['attributes']): string =>
+      [a.quantity != null ? String(a.quantity) : '', (a.unit ?? '').trim()].filter(Boolean).join(' ').trim()
 
-      // --- INSERT variant (triggers inventory seed) ------------------------------
+    // value-string → attribute_value_id, keyed by attribute name. Built once per group.
+    type AttrValueMaps = Record<string, Map<string, string>>
+    // The created attribute rows + their value ids, so partial-failure pruning can
+    // remove values/attributes that no surviving variant ended up linking to.
+    type GroupAttrs = { maps: AttrValueMaps; attrs: Array<{ id: string; valueIds: string[] }> }
+
+    // Create the group's product_attributes + product_attribute_values (mirrors
+    // createProductAction's EAV section). Returns the value→id maps + created ids,
+    // or null on failure.
+    async function setupGroupAttributes(
+      productId: string,
+      group: NormalizedProduct
+    ): Promise<GroupAttrs | null> {
+      // Distinct values in first-seen order — order becomes attribute_value.position.
+      const flavors: string[] = []
+      const sizes: string[] = []
+      for (const nv of group.variants) {
+        const f = flavorOf(nv.attributes)
+        if (f && !flavors.includes(f)) flavors.push(f)
+        const s = sizeOf(nv.attributes)
+        if (s && !sizes.includes(s)) sizes.push(s)
+      }
+
+      const defs: Array<{ name: string; values: string[] }> = []
+      if (flavors.length) defs.push({ name: FLAVOR_ATTR, values: flavors })
+      if (sizes.length) defs.push({ name: SIZE_ATTR, values: sizes })
+
+      const maps: AttrValueMaps = {}
+      const attrs: Array<{ id: string; valueIds: string[] }> = []
+      for (let ai = 0; ai < defs.length; ai++) {
+        const def = defs[ai]
+        const { data: attrRow, error: attrErr } = await supabase
+          .from('product_attributes')
+          .insert({ tenant_id: tenantId, product_id: productId, name: def.name, position: ai })
+          .select('id')
+          .single()
+        if (attrErr || !attrRow) return null
+
+        const payload = def.values.map((value, vi) => ({
+          tenant_id: tenantId,
+          attribute_id: attrRow.id as string,
+          value,
+          position: vi,
+        }))
+        const { data: valueRows, error: valErr } = await supabase
+          .from('product_attribute_values')
+          .insert(payload)
+          .select('id, value')
+        if (valErr || !valueRows) return null
+
+        const m = new Map<string, string>()
+        for (const r of valueRows) m.set(r.value as string, r.id as string)
+        maps[def.name] = m
+        attrs.push({ id: attrRow.id as string, valueIds: valueRows.map((r) => r.id as string) })
+      }
+      return { maps, attrs }
+    }
+
+    // Insert one variant under an already-created parent, then link it to its EAV
+    // attribute values. `attached` = freshly created under productId (vs. resolved via
+    // a DB-side SKU conflict on an existing variant elsewhere).
+    async function insertVariant(
+      productId: string,
+      nv: NormalizedVariant,
+      maps: AttrValueMaps,
+      rowIndex: number
+    ): Promise<VariantOutcome> {
+      const v = nv.variant
       const { data: variant, error: variantErr } = await supabase
         .from('product_variants')
         .insert({
           tenant_id:     tenantId,
-          product_id:    product.id,
-          sku:           row.variant.sku,
-          barcode:       row.variant.barcode ?? null,
-          internal_code: row.variant.internal_code ?? null,
-          price:         row.variant.price,
-          cost_price:    row.variant.cost_price ?? null,
-          unit:          row.variant.unit ?? 'unit',
-          weight_kg:     row.variant.weight_kg ?? null,
-          status:        row.variant.status ?? 'active',
+          product_id:    productId,
+          sku:           v.sku,
+          barcode:       v.barcode ?? null,
+          internal_code: v.internal_code ?? null,
+          price:         v.price,
+          cost_price:    v.cost_price ?? null,
+          unit:          v.unit ?? 'unit',
+          weight_kg:     v.weight_kg ?? null,
+          status:        v.status ?? 'active',
         })
         .select('id')
         .single()
 
       if (variantErr || !variant) {
         if (variantErr?.code === '23505' && conflictStrategy !== 'skip') {
-          // SKU exists in DB — apply merge or replace strategy
-          await supabase.from('products').delete().eq('id', product.id)
-
+          // SKU exists in DB — apply merge or replace against the EXISTING variant.
+          // (The shared parent we created stays; orphan cleanup happens per-group.
+          //  EAV links of the existing variant are left untouched, as before.)
           const { data: existingVariant, error: findErr } = await supabase
             .from('product_variants')
             .select('id, product_id')
             .eq('tenant_id', tenantId)
-            .eq('sku', row.variant.sku)
+            .eq('sku', v.sku)
+            .is('deleted_at', null)
             .maybeSingle()
 
-          if (findErr || !existingVariant)
-            return { ok: false, rowIndex, sku: row.variant.sku, reason: 'שגיאה באיתור variant קיים' }
+          if (findErr)
+            return { ok: false, rowIndex, sku: v.sku, reason: 'שגיאה באיתור variant קיים' }
+          // 23505 fired but no LIVE variant matches → the SKU is held by a SOFT-DELETED
+          // variant. UNIQUE(tenant_id, sku) is a full constraint (not partial on
+          // deleted_at), so a dead row still blocks the SKU. Don't fall through to
+          // merge/replace — there's no live row to update, and mutating a deleted row
+          // would silently change a hidden product. Report it clearly instead.
+          if (!existingVariant)
+            return { ok: false, rowIndex, sku: v.sku, reason: `SKU תפוס על ידי variant מחוק: ${v.sku}` }
+
+          // The conflict resolved to a variant we JUST inserted under this same parent
+          // (two rows in the file carry the same SKU). Don't merge/replace our own
+          // sibling — that would mutate it and double-count. Report as an intra-file dup.
+          if (existingVariant.product_id === productId)
+            return { ok: false, rowIndex, sku: v.sku, reason: `SKU כפול בקובץ, דולג: ${v.sku}` }
 
           if (conflictStrategy === 'merge') {
             const patch: Record<string, unknown> = {
-              price: row.variant.price,
-              unit: row.variant.unit,
-              status: row.variant.status,
+              price: v.price,
+              unit: v.unit,
+              status: v.status,
               updated_at: new Date().toISOString(),
             }
-            if (row.variant.barcode) patch.barcode = row.variant.barcode
-            if (row.variant.internal_code) patch.internal_code = row.variant.internal_code
-            if (row.variant.cost_price != null) patch.cost_price = row.variant.cost_price
-            if (row.variant.weight_kg != null) patch.weight_kg = row.variant.weight_kg
+            if (v.barcode) patch.barcode = v.barcode
+            if (v.internal_code) patch.internal_code = v.internal_code
+            if (v.cost_price != null) patch.cost_price = v.cost_price
+            if (v.weight_kg != null) patch.weight_kg = v.weight_kg
             await supabase
               .from('product_variants')
               .update(patch)
               .eq('id', existingVariant.id)
               .eq('tenant_id', tenantId)
           } else {
-            // replace — overwrite variant and product completely
+            // replace — overwrite the existing variant completely
             await supabase
               .from('product_variants')
               .update({
-                barcode:       row.variant.barcode ?? null,
-                internal_code: row.variant.internal_code ?? null,
-                price:         row.variant.price,
-                cost_price:    row.variant.cost_price ?? null,
-                unit:          row.variant.unit,
-                weight_kg:     row.variant.weight_kg ?? null,
-                status:        row.variant.status,
+                barcode:       v.barcode ?? null,
+                internal_code: v.internal_code ?? null,
+                price:         v.price,
+                cost_price:    v.cost_price ?? null,
+                unit:          v.unit,
+                weight_kg:     v.weight_kg ?? null,
+                status:        v.status,
                 updated_at:    new Date().toISOString(),
               })
               .eq('id', existingVariant.id)
-              .eq('tenant_id', tenantId)
-
-            await supabase
-              .from('products')
-              .update({
-                name:          row.product.name,
-                description:   row.product.description ?? null,
-                supplier_name: row.product.supplier_name ?? null,
-                animal_type:   row.product.animal_type ?? 'other',
-                age_group:     row.product.age_group ?? 'all',
-                diet_type:     row.product.diet_type ?? 'regular',
-                tags:          row.product.tags ?? [],
-                categories:    row.product.categories ?? [],
-                vat_rate:      row.product.vat_rate ?? 18,
-                updated_at:    new Date().toISOString(),
-              })
-              .eq('id', existingVariant.product_id as string)
               .eq('tenant_id', tenantId)
           }
 
           return {
             ok: true,
-            inventoryUpdate: { variantId: existingVariant.id, qty: row.inventory.qty, reorderLevel: row.inventory.reorder_level },
+            attached: false,
+            inventoryUpdate: { variantId: existingVariant.id, qty: nv.inventory.qty, reorderLevel: nv.inventory.reorder_level },
           }
         }
 
-        // Not a 23505, or strategy=skip — rollback product and report
-        await supabase.from('products').delete().eq('id', product.id)
+        // Not a 23505, or strategy=skip — report; parent kept for sibling variants.
         return {
           ok: false,
           rowIndex,
-          sku: row.variant.sku,
+          sku: v.sku,
           reason: variantErr?.code === '23505'
-            ? `SKU קיים, דולג: ${row.variant.sku}`
+            ? `SKU קיים, דולג: ${v.sku}`
             : (variantErr?.message ?? 'שגיאה בשמירת ה-variant'),
         }
       }
 
-      // Collect inventory update — executed in a parallel batch after the loop
-      if (row.inventory.qty > 0 || row.inventory.reorder_level > 0)
-        return { ok: true, inventoryUpdate: { variantId: variant.id, qty: row.inventory.qty, reorderLevel: row.inventory.reorder_level } }
+      // Link the fresh variant to its attribute values (flavor + size).
+      const links: Array<{ variant_id: string; attribute_value_id: string }> = []
+      const linkedValueIds: string[] = []
+      const flavor = flavorOf(nv.attributes)
+      const flavorId = flavor ? maps[FLAVOR_ATTR]?.get(flavor) : undefined
+      if (flavorId) { links.push({ variant_id: variant.id, attribute_value_id: flavorId }); linkedValueIds.push(flavorId) }
+      const size = sizeOf(nv.attributes)
+      const sizeId = size ? maps[SIZE_ATTR]?.get(size) : undefined
+      if (sizeId) { links.push({ variant_id: variant.id, attribute_value_id: sizeId }); linkedValueIds.push(sizeId) }
 
-      return { ok: true }
+      if (links.length) {
+        const { error: linkErr } = await supabase.from('variant_attribute_values').insert(links)
+        if (linkErr) {
+          // Keep things consistent: drop the unlinked variant and report it as failed.
+          await supabase.from('product_variants').delete().eq('id', variant.id)
+          return { ok: false, rowIndex, sku: v.sku, reason: 'שגיאה בשיוך מאפייני variant' }
+        }
+      }
+
+      // Freshly inserted under our parent. Collect inventory update (deferred).
+      if (nv.inventory.qty > 0 || nv.inventory.reorder_level > 0)
+        return { ok: true, attached: true, linkedValueIds, inventoryUpdate: { variantId: variant.id, qty: nv.inventory.qty, reorderLevel: nv.inventory.reorder_level } }
+
+      return { ok: true, attached: true, linkedValueIds }
     }
 
-    // Process rows in parallel batches
+    // Insert one parent product, its EAV attributes, then all its variants.
+    async function processGroup(group: NormalizedProduct): Promise<VariantOutcome[]> {
+      const failGroup = (reason: string): VariantOutcome[] =>
+        group.variants.map((nv, i) => ({
+          ok: false as const,
+          rowIndex: group.sourceRowIndexes[i],
+          sku: nv.variant.sku,
+          reason,
+        }))
+
+      // --- INSERT parent product ------------------------------------------------
+      const { data: product, error: productErr } = await supabase
+        .from('products')
+        .insert({
+          tenant_id:     tenantId,
+          name:          group.parent.name,
+          description:   group.parent.description ?? null,
+          supplier_name: group.parent.supplier_name ?? null,
+          animal_type:   group.parent.animal_type ?? 'other',
+          age_group:     group.parent.age_group ?? 'all',
+          diet_type:     group.parent.diet_type ?? 'regular',
+          allergen_free: [],
+          tags:          group.parent.tags ?? [],
+          categories:    group.parent.categories ?? [],
+          vat_rate:      group.parent.vat_rate ?? 18,
+        })
+        .select('id')
+        .single()
+
+      if (productErr || !product) return failGroup(productErr?.message ?? 'שגיאה בשמירת המוצר')
+
+      // --- INSERT EAV attributes for the group ----------------------------------
+      const setup = await setupGroupAttributes(product.id, group)
+      if (!setup) {
+        // Roll back the parent (FK cascade removes any attributes/values) and fail.
+        await supabase.from('products').delete().eq('id', product.id)
+        return failGroup('שגיאה בשמירת מאפייני המוצר')
+      }
+
+      // --- INSERT variants (each triggers inventory seed) + EAV links -----------
+      const outcomes = await Promise.all(
+        group.variants.map((nv, i) => insertVariant(product.id, nv, setup.maps, group.sourceRowIndexes[i]))
+      )
+
+      // Orphan cleanup: if nothing actually attached to this new parent (all variants
+      // failed, or were redirected to existing records via conflict), drop the parent
+      // — FK cascade also removes the attributes/values we created for it.
+      const attached = outcomes.some((o) => o.ok && o.attached)
+      if (!attached) {
+        await supabase.from('products').delete().eq('id', product.id)
+        return outcomes
+      }
+
+      // Prune EAV that no surviving variant linked to. Attribute values are built from
+      // ALL variants up front, so a partially-failed group (some variants skipped via
+      // conflict, or dropped on link error) would otherwise leave dangling values
+      // (e.g. a "טעם: עוף" with no chicken variant). Cheap no-op on a fully-clean group.
+      const linkedIds = new Set<string>()
+      for (const o of outcomes) if (o.ok && o.linkedValueIds) for (const id of o.linkedValueIds) linkedIds.add(id)
+
+      const danglingValueIds: string[] = []
+      const emptyAttrIds: string[] = []
+      for (const attr of setup.attrs) {
+        const dangling = attr.valueIds.filter((id) => !linkedIds.has(id))
+        danglingValueIds.push(...dangling)
+        if (dangling.length === attr.valueIds.length) emptyAttrIds.push(attr.id)
+      }
+      if (danglingValueIds.length)
+        await supabase.from('product_attribute_values').delete().in('id', danglingValueIds).eq('tenant_id', tenantId)
+      if (emptyAttrIds.length)
+        await supabase.from('product_attributes').delete().in('id', emptyAttrIds).eq('tenant_id', tenantId)
+
+      return outcomes
+    }
+
+    // Process groups in parallel batches
     const result: ImportResult = { imported: 0, failed: 0, errors: [] }
     const inventoryUpdates: Array<{ variantId: string; qty: number; reorderLevel: number }> = []
 
-    for (let start = 0; start < rows.length; start += IMPORT_BATCH_SIZE) {
-      const batch = rows.slice(start, start + IMPORT_BATCH_SIZE)
-      const settled = await Promise.allSettled(
-        batch.map((row, localIdx) => processRow(row, start + localIdx))
-      )
-      for (const s of settled) {
-        const outcome = s.status === 'fulfilled' ? s.value : { ok: false as const, rowIndex: -1, reason: 'שגיאה לא צפויה' }
-        if (outcome.ok) {
-          result.imported++
-          if (outcome.inventoryUpdate) inventoryUpdates.push(outcome.inventoryUpdate)
-        } else {
-          result.failed++
-          result.errors.push({ rowIndex: outcome.rowIndex, sku: outcome.sku, reason: outcome.reason })
+    for (let start = 0; start < groups.length; start += IMPORT_BATCH_SIZE) {
+      const batch = groups.slice(start, start + IMPORT_BATCH_SIZE)
+      const settled = await Promise.allSettled(batch.map((group) => processGroup(group)))
+      settled.forEach((s, bi) => {
+        const group = batch[bi]
+        // processGroup catches its own DB errors and returns a per-row outcome list; a
+        // rejection here is unexpected, but still expand it to one failure per source
+        // row so counts and rowIndexes stay aligned (never collapse a group to one -1).
+        const outcomes: VariantOutcome[] = s.status === 'fulfilled'
+          ? s.value
+          : group.variants.map((nv, i) => ({
+              ok: false as const,
+              rowIndex: group.sourceRowIndexes[i],
+              sku: nv.variant.sku,
+              reason: 'שגיאה לא צפויה',
+            }))
+        for (const outcome of outcomes) {
+          if (outcome.ok) {
+            result.imported++
+            if (outcome.inventoryUpdate) inventoryUpdates.push(outcome.inventoryUpdate)
+          } else {
+            result.failed++
+            result.errors.push({ rowIndex: outcome.rowIndex, sku: outcome.sku, reason: outcome.reason })
+          }
         }
-      }
+      })
     }
 
-    // Flush deferred inventory updates in parallel batches (non-fatal)
+    // Flush deferred inventory updates in parallel batches (non-fatal).
+    // NOTE (single-branch assumption): inventory is keyed to `defaultBranch.id`. For a
+    // merge/replace conflict that resolved to an existing variant whose stock is tracked
+    // on a NON-default branch, this update matches no row and silently no-ops. Fine for
+    // the MVP single-branch case; revisit when import supports per-branch stock.
     for (let start = 0; start < inventoryUpdates.length; start += IMPORT_BATCH_SIZE) {
       await Promise.allSettled(
         inventoryUpdates.slice(start, start + IMPORT_BATCH_SIZE).map(({ variantId, qty, reorderLevel }) =>

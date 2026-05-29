@@ -11,7 +11,7 @@ export interface ImportFieldDef {
   type: ImportFieldType
   allowedValues?: readonly string[]
   defaultValue?: string | number
-  section: 'product' | 'variant' | 'inventory' | 'customer'
+  section: 'product' | 'variant' | 'inventory' | 'customer' | 'dimension'
 }
 
 export const PRODUCT_IMPORT_FIELDS: ImportFieldDef[] = [
@@ -34,6 +34,11 @@ export const PRODUCT_IMPORT_FIELDS: ImportFieldDef[] = [
   { id: 'variant.status',       label: 'סטטוס',                  required: false, type: 'enum',   allowedValues: ['active','inactive'], defaultValue: 'active', section: 'variant' },
   { id: 'inventory.qty',        label: 'כמות במלאי',             required: false, type: 'number', defaultValue: 0,  section: 'inventory' },
   { id: 'inventory.reorder_level', label: 'סף מלאי נמוך',        required: false, type: 'number', defaultValue: 0,  section: 'inventory' },
+  // Generic product dimensions (גודל/משקל/נפח). NOT stock (inventory.qty) and NOT
+  // shipping weight (variant.weight_kg) — these feed the variant's EAV attribute
+  // values via the normalization hook, and the unit also drives variant grouping.
+  { id: 'dimension.quantity',   label: 'כמות מימד (גודל/משקל/נפח)', required: false, type: 'number', section: 'dimension' },
+  { id: 'dimension.unit',       label: 'יחידת מימד (גרם/מ"ל/ס"מ/יח׳)', required: false, type: 'text', section: 'dimension' },
 ]
 
 export const CUSTOMER_IMPORT_FIELDS: ImportFieldDef[] = [
@@ -154,6 +159,14 @@ export interface ImportRowData {
     qty: number
     reorder_level: number
   }
+  // Generic descriptive dimensions captured from the file's "Quantity"/"Unit" columns.
+  // Mapped to the variant's EAV attribute values by normalizeImportRows; the unit
+  // also participates in variant grouping. Optional so existing constructors
+  // (and rows imported before this field existed) stay valid.
+  dimensions?: {
+    quantity: number | null
+    unit: string | null
+  }
 }
 
 // Row after client-side validation
@@ -254,6 +267,12 @@ export function validateImportRow(
   const reorderLevel = reorderRaw !== '' ? parseFloat(reorderRaw) : 0
   if (isNaN(reorderLevel) || reorderLevel < 0) errors.push('סף מלאי לא חוקי')
 
+  // Descriptive dimensions (size/weight/volume) → mapped to EAV attribute values, not stock/weight.
+  const dimQtyRaw = get('dimension.quantity')
+  const dimQuantity = dimQtyRaw !== '' ? parseFloat(dimQtyRaw) : null
+  if (dimQtyRaw !== '' && isNaN(dimQuantity!)) errors.push('כמות מימד לא חוקית')
+  const dimUnit = get('dimension.unit') || null
+
   // Enum coercion (unknown → default)
   const animalRaw = get('product.animal_type').toLowerCase()
   const animal_type = ['dog','cat','rodent','bird','fish','reptile','other'].includes(animalRaw) ? animalRaw : 'other'
@@ -309,6 +328,7 @@ export function validateImportRow(
         status,
       },
       inventory: { qty, reorder_level: reorderLevel },
+      dimensions: { quantity: dimQuantity, unit: dimUnit },
     },
   }
 }

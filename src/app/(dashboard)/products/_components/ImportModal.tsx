@@ -34,6 +34,7 @@ const SECTION_LABELS: Record<string, string> = {
   product: 'מוצר',
   variant: 'Variant / SKU',
   inventory: 'מלאי',
+  dimension: 'מימד (גודל/טעם)',
   customer: 'לקוח',
 }
 
@@ -69,7 +70,7 @@ export function ImportModal({ open, onClose, target = 'products' }: ImportModalP
   const duplicateKeyField = target === 'products' ? 'variant.sku' : 'customer.phone'
   const entityLabel = target === 'products' ? 'מוצרים' : 'לקוחות'
   const sections = target === 'products'
-    ? ['product', 'variant', 'inventory']
+    ? ['product', 'variant', 'inventory', 'dimension']
     : ['customer']
   const requiredFields = target === 'products'
     ? ['product.name', 'variant.sku', 'variant.price']
