@@ -63,6 +63,13 @@ export function ProductsTable({
    * rather than the value captured at subscribe time.
    */
   const removedIdsRef = useRef<Set<string>>(removedIds)
+  /**
+   * Mirror of `products` kept in a ref so the realtime handler can do its
+   * visibility check against the *current* list without `products` being an
+   * effect dependency — that lets the subscription mount once instead of
+   * tearing down and re-joining (with a fresh async setAuth) on every change.
+   */
+  const productsRef = useRef<ProductListItem[]>(products)
   /** All timers spawned by a delete run — tracked so we can clear on unmount. */
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const progressTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -78,10 +85,13 @@ export function ProductsTable({
     }
   }, [])
 
-  // Keep the ref in lock-step with the state for the realtime handler.
+  // Keep the refs in lock-step with state/props for the realtime handler.
   useEffect(() => {
     removedIdsRef.current = removedIds
   }, [removedIds])
+  useEffect(() => {
+    productsRef.current = products
+  }, [products])
 
   const pushToast = useCallback((t: Omit<ToastSpec, 'id'>): number => {
     const id = ++toastSeq.current
@@ -335,66 +345,89 @@ export function ProductsTable({
   // --- Realtime: other users' deletes/restores ------------------------------
   useEffect(() => {
     const supabase = createClient()
-    const channel = supabase
-      .channel('products-soft-delete')
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'products' },
-        (payload) => {
-          const newRow = payload.new as { id?: string; deleted_at?: string | null }
-          const oldRow = payload.old as { id?: string; deleted_at?: string | null }
-          const id = newRow?.id ?? oldRow?.id
-          if (!id) return
+    let channel: ReturnType<typeof supabase.channel> | null = null
+    let cancelled = false
 
-          // NOTE: with RLS on, Supabase Realtime strips `payload.old` down to the
-          // primary key, so `oldRow.deleted_at` is always undefined here. We must
-          // decide solely from `new` + our own local view of which rows are hidden.
-          const becameDeleted = !!newRow?.deleted_at
-          // A restore is an UPDATE landing on deleted_at == null for a row this
-          // client currently has hidden in `removedIds`. Plain edits (name/price)
-          // also carry deleted_at == null, but their id is NOT hidden — so they
-          // fall through and never trigger a refresh.
-          const becameRestored = !newRow?.deleted_at && removedIdsRef.current.has(id)
+    // Realtime evaluates RLS on the postgres_changes stream against the JWT on
+    // the socket. createBrowserClient only auto-wires realtime.setAuth on
+    // SIGNED_IN / TOKEN_REFRESHED — NOT on the INITIAL_SESSION that fires when an
+    // already-logged-in user loads the page. So with no explicit setAuth the
+    // socket stays on the anon/publishable key and RLS blocks every row → no
+    // events arrive. Pull the session JWT from cookies and set it before joining.
+    const setup = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      if (cancelled) return
+      if (session?.access_token) {
+        await supabase.realtime.setAuth(session.access_token)
+      }
+      if (cancelled) return
 
-          if (becameDeleted) {
-            // Ignore the echo of our own delete.
-            if (selfDeletedRef.current.has(id)) return
-            // Only react if the row is actually visible in this list right now.
-            const known = products.some((p) => p.id === id)
-            setRemovedIds((prev) => {
-              if (!known || prev.has(id)) return prev
-              pushToast({
-                message: 'מוצר הוסר על ידי משתמש אחר',
-                duration: 5000,
+      channel = supabase
+        .channel('products-soft-delete')
+        .on(
+          'postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'products' },
+          (payload) => {
+            const newRow = payload.new as { id?: string; deleted_at?: string | null }
+            const oldRow = payload.old as { id?: string; deleted_at?: string | null }
+            const id = newRow?.id ?? oldRow?.id
+            if (!id) return
+
+            // NOTE: with RLS on, Supabase Realtime strips `payload.old` down to
+            // the primary key, so `oldRow.deleted_at` is always undefined here. We
+            // must decide solely from `new` + our local view of which rows hidden.
+            const becameDeleted = !!newRow?.deleted_at
+            // A restore is an UPDATE landing on deleted_at == null for a row this
+            // client currently has hidden in `removedIds`. Plain edits (name/price)
+            // also carry deleted_at == null, but their id is NOT hidden — so they
+            // fall through and never trigger a refresh.
+            const becameRestored = !newRow?.deleted_at && removedIdsRef.current.has(id)
+
+            if (becameDeleted) {
+              // Ignore the echo of our own delete.
+              if (selfDeletedRef.current.has(id)) return
+              // Only react if the row is actually visible in this list right now.
+              const known = productsRef.current.some((p) => p.id === id)
+              setRemovedIds((prev) => {
+                if (!known || prev.has(id)) return prev
+                pushToast({
+                  message: 'מוצר הוסר על ידי משתמש אחר',
+                  duration: 5000,
+                })
+                return new Set([...prev, id])
               })
-              return new Set([...prev, id])
-            })
-          } else if (becameRestored) {
-            // Ignore the echo of our own undo: when this client restores a row it
-            // removes the id from selfDeletedRef *after* updating removedIds, so a
-            // self-restore arrives with the id no longer in selfDeletedRef but also
-            // no longer in removedIds — the becameRestored guard above won't fire.
-            // A restore still in selfDeletedRef means another user restored a row
-            // we deleted; let it through so the row comes back.
-            setRemovedIds((prev) => {
-              if (!prev.has(id)) return prev
-              const next = new Set(prev)
-              next.delete(id)
-              return next
-            })
-            selfDeletedRef.current.delete(id)
-            router.refresh()
+            } else if (becameRestored) {
+              // Ignore the echo of our own undo: when this client restores a row it
+              // removes the id from selfDeletedRef *after* updating removedIds, so a
+              // self-restore arrives with the id no longer in selfDeletedRef but also
+              // no longer in removedIds — the becameRestored guard above won't fire.
+              // A restore still in selfDeletedRef means another user restored a row
+              // we deleted; let it through so the row comes back.
+              setRemovedIds((prev) => {
+                if (!prev.has(id)) return prev
+                const next = new Set(prev)
+                next.delete(id)
+                return next
+              })
+              selfDeletedRef.current.delete(id)
+              router.refresh()
+            }
           }
-        }
-      )
-      .subscribe()
+        )
+        .subscribe()
+    }
+
+    setup()
 
     return () => {
-      supabase.removeChannel(channel)
+      cancelled = true
+      if (channel) supabase.removeChannel(channel)
     }
-    // products is intentionally a dep so the "known"/visibility check stays fresh.
+    // Visibility/hidden checks read from refs, so this subscribes once on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [products])
+  }, [])
 
   const totalPages = Math.max(1, Math.ceil(total / 20))
 
