@@ -137,6 +137,7 @@ auth.users (Supabase) (1) ─── (1) users.auth_user_id
 - `tenant.settings_changed`, `tenant.plan_changed`
 - `order.deleted`, `order.refunded`
 - `product.created`, `product.updated`, `product.deleted`, `product.duplicated`
+- `product.bulk_deleted` (metadata: `{ count, ids }`), `product.restored` (Undo — metadata: `{ count, ids }`)
 - `product_variant.updated`
 - `product_inventory.updated`
 - `product.price_changed` (legacy — to be deprecated; replaced by `product_variant.updated` with `fields: ['price']`)
@@ -164,11 +165,13 @@ auth.users (Supabase) (1) ─── (1) users.auth_user_id
 | `categories` | TEXT[] NOT NULL | קטגוריות מוצר ("אוכל לכלבים", "גורים"). שדה עצמאי מ-`tags`. ברירת מחדל `'{}'`. |
 | `vat_rate` | NUMERIC(5,2) NOT NULL | אחוז מע"מ. ברירת מחדל `18.00`. תומך גם ב-0% למוצרים פטורים. |
 | `status` | TEXT NOT NULL | CHECK: `active` / `inactive` / `discontinued`. ברירת מחדל `active`. |
-| `deleted_at` | TIMESTAMPTZ | Soft delete — `NULL` = פעיל. RLS מסנן רק `deleted_at IS NULL`. variants ו-inventory נמחקים cascade דרך FK. |
+| `deleted_at` | TIMESTAMPTZ | Soft delete — `NULL` = פעיל. הסינון `deleted_at IS NULL` נעשה ב-**קוד האפליקציה** (`.is('deleted_at', null)` בכל query), **לא ב-RLS**. variants ו-inventory נמחקים cascade דרך FK. |
 | `created_at` | TIMESTAMPTZ NOT NULL | |
 | `updated_at` | TIMESTAMPTZ NOT NULL | מתעדכן אוטומטית ע"י טריגר `products_set_updated_at`. |
 
-**RLS:** `products_tenant_isolation` — `tenant_id = current_tenant_id() AND deleted_at IS NULL`. ENABLE + FORCE RLS. service_role עוקף.
+**RLS:** `products_tenant_isolation` — `FOR ALL USING (tenant_id = current_tenant_id())` (גם WITH CHECK). ENABLE + FORCE RLS. service_role עוקף.
+⚠️ **תיקון drift (2026-05-29):** ה-policy **בפועל** ב-DB **אינו** כולל `AND deleted_at IS NULL` (נבדק מול pg_policy). המשמעות: client מאומת (`getAuthenticatedClient`) **כן** רואה ויכול לעדכן שורות soft-deleted — לכן `restoreProductsAction` (Undo) עובד ללא service_role. הסינון של מחוקים נשען על קוד האפליקציה.
+**Realtime:** `products` מצורף ל-publication `supabase_realtime` (migration `202605291200_products_realtime_publication.sql`, `REPLICA IDENTITY FULL`). Realtime מכבד RLS רק על channel מאומת (JWT דרך `realtime.setAuth`). מחיקה = UPDATE עם `deleted_at` → ה-frontend מזהה מחיקה ב-`new.deleted_at != null && old.deleted_at == null`, ושחזור הפוך.
 **מוגדר ב:** PRD #3 ([`prd/03-products.md`](../03-products.md))
 
 ---
