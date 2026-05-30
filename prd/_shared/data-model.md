@@ -3,8 +3,8 @@
 > **קובץ חי.** כל PRD מעדכן את הקובץ הזה. כל טבלה חדשה, כל שדה חדש — מתועד פה.
 > **חוק זהב:** כל טבלה (חוץ מ-`tenants`) חייבת `tenant_id UUID NOT NULL` + RLS policy.
 
-**עדכון אחרון:** 2026-05-25 (נוסף מודול Import — טבלת `import_mapping_templates` מ-PRD #4)
-**מקור הגדרה אחרון:** PRD: CSV/Excel Import Engine (`prd/04-csv-import.md`) — סטטוס: Implemented
+**עדכון אחרון:** 2026-05-30 (נוסף מודול Invoicing & Documents — 6 טבלאות חדשות + שינויי orders מ-PRD #19a)
+**מקור הגדרה אחרון:** PRD: Invoicing & Documents (`prd/19a-invoicing-documents.md`) — סטטוס: Ready
 
 ---
 
@@ -141,7 +141,9 @@ auth.users (Supabase) (1) ─── (1) users.auth_user_id
 - `product_variant.updated`
 - `product_inventory.updated`
 - `product.price_changed` (legacy — to be deprecated; replaced by `product_variant.updated` with `fields: ['price']`)
-- `data.exported`
+- `customer.created`, `customer.updated`, `customer.deleted`
+- `customer.bulk_deleted` (metadata: `{ count, ids }`), `customer.restored` (Undo — metadata: `{ count, ids }`)
+- `data.imported`, `data.exported`
 
 **RLS:** `owner` רואה את כל ה-audit של ה-tenant. אחרים — רק פעולות שהם עצמם ביצעו.
 
@@ -331,12 +333,178 @@ revoked   — בוטלה ידנית
 ---
 
 ## טבלאות עתידיות (לתיעוד כשייכתב PRD שלהן)
-- `customers` — לקוחות הקצה (B2C של ה-tenant)
-- `pets` — חיות של לקוחות
-- `orders` — הזמנות
-- `order_items` — פריטים בהזמנה
-- `subscriptions` — מנויים
-- `notifications` — התראות
+- `customers` — לקוחות הקצה (B2C של ה-tenant) — Done (PRD #5)
+- `pets` — חיות של לקוחות — Done (PRD #5)
+- `orders` — הזמנות — Done (PRD #6)
+- `order_items` — פריטים בהזמנה — Done (PRD #6)
+- `subscriptions` — מנויים — Done (PRD #6)
 - `loyalty_points` — נקודות נאמנות
 - `suppliers` — ספקים (כרגע `products.supplier_name` הוא טקסט חופשי)
 - `price_tiers` — מחיר לפי לקוח / B2B (P2)
+
+---
+
+## טבלאות מ-PRD #19a (Invoicing & Documents) — Ready, לפיתוח ב-Sprint 7-8
+
+### `payment_provider_settings` — הגדרות ספק סליקה פר tenant
+
+| עמודה | סוג | תיאור |
+|---|---|---|
+| `tenant_id` | UUID PK | FK ל-`tenants` ON DELETE CASCADE. אחד לכל tenant. |
+| `provider` | TEXT NOT NULL | DEFAULT `'payplus'`. CHECK `('payplus')`. P2: `'tranzila'`, `'cardcom'`, `'zcredit'`. |
+| `api_key_encrypted` | TEXT | 🔒 מוצפן ע"י Supabase Vault wrapper. |
+| `api_secret_encrypted` | TEXT | 🔒 מוצפן. |
+| `terminal_id` | TEXT | מסוף סליקה (PayPlus). |
+| `webhook_secret` | TEXT | 🔒 מוצפן. לאימות חתימת webhook. |
+| `is_sandbox` | BOOLEAN NOT NULL | DEFAULT true. |
+| `last_tested_at` | TIMESTAMPTZ | |
+| `last_test_status` | TEXT | CHECK `('success','failed')`. |
+| `created_at`, `updated_at` | TIMESTAMPTZ NOT NULL | |
+
+**RLS:** `tenant_id = current_tenant_id()` + `owner` בלבד יכול INSERT/UPDATE. ENABLE + FORCE RLS.
+**מוגדר ב:** PRD #19a
+
+---
+
+### `invoice_provider_settings` — הגדרות ספק חשבוניות פר tenant (נפרד מסליקה)
+
+| עמודה | סוג | תיאור |
+|---|---|---|
+| `tenant_id` | UUID PK | FK ל-`tenants` ON DELETE CASCADE. |
+| `provider` | TEXT NOT NULL | DEFAULT `'payplus'`. CHECK `('payplus')`. P2: `'morning'`, `'icount'`, `'ezcount'`. |
+| `api_key_encrypted` | TEXT | 🔒 מוצפן. יכול להיות זהה ל-payment אם אותו ספק. |
+| `api_secret_encrypted` | TEXT | 🔒 מוצפן. |
+| `company_id_external` | TEXT | ID העסק אצל ספק החשבוניות. |
+| `vat_id` | TEXT | ח.פ./עוסק מורשה. |
+| `is_sandbox` | BOOLEAN NOT NULL | DEFAULT true. |
+| `last_tested_at`, `last_test_status` | TIMESTAMPTZ, TEXT | כמו לעיל. |
+| `created_at`, `updated_at` | TIMESTAMPTZ NOT NULL | |
+
+**RLS:** זהה ל-`payment_provider_settings`.
+**מוגדר ב:** PRD #19a
+**הערה:** שתי הטבלאות נפרדות בכוונה — שני Adapters עצמאיים. גם אם PayPlus משמש לשניהם ב-MVP, כל אחד מוגדר ב-row משלו.
+
+---
+
+### `accounting_documents` — הטבלה הראשית של מסמכים חשבונאיים
+
+| עמודה | סוג | תיאור |
+|---|---|---|
+| `id` | UUID PK | |
+| `tenant_id` | UUID NOT NULL | FK ל-`tenants` ON DELETE CASCADE. |
+| `branch_id` | UUID NOT NULL | FK ל-`branches`. |
+| `customer_id` | UUID NOT NULL | FK ל-`customers`. |
+| `created_by` | UUID NOT NULL | FK ל-`users`. |
+| `doc_type` | TEXT NOT NULL | CHECK: **MVP — 3 ערכים בלבד**: `'tax_invoice_receipt'`, `'delivery_note'`, `'credit_note'`. Phase 2: יתווספו `'tax_invoice'`, `'receipt'`. |
+| `status` | TEXT NOT NULL | DEFAULT `'draft'`. CHECK: `'draft'` / `'issued'` / `'cancelled_by_credit_note'` / `'error'`. |
+| `external_provider` | TEXT NOT NULL | DEFAULT `'payplus'`. P2: `'morning'`, `'icount'`. |
+| `external_doc_id` | TEXT | ID פנימי אצל הספק. |
+| `external_doc_number` | TEXT | המספר הרץ החוקי (מנוהל ע"י PayPlus). |
+| `external_doc_series` | TEXT | prefix אלפביתי של PayPlus (לעמידה בחוק ניהול ספרים). |
+| `external_unique_identifier` | TEXT | idempotency key — מונע כפילויות בwebhook retries. |
+| `pdf_url` | TEXT | URL ל-PDF אצל הספק. |
+| `subtotal`, `discount` | NUMERIC(12,2) NOT NULL DEFAULT 0 | |
+| `vat_rate` | NUMERIC(5,2) NOT NULL | DEFAULT 18. |
+| `vat_amount`, `total` | NUMERIC(12,2) NOT NULL DEFAULT 0 | |
+| `currency` | TEXT NOT NULL | DEFAULT `'ILS'`. |
+| `payment_method` | TEXT | CHECK: `'payplus'`/`'cash'`/`'transfer'`/`'credit_card'`/`'check'`. |
+| `proof_image_url` | TEXT | רק `delivery_note` — תמונת המשלוח. |
+| `gps_lat`, `gps_lng` | NUMERIC | רק `delivery_note` — אופציונלי. |
+| `sent_to_customer_at`, `sent_via` | TIMESTAMPTZ, TEXT | `sent_via` CHECK: `'whatsapp'`/`'email'`/`'sms'`. |
+| `issued_at` | TIMESTAMPTZ | מתי הופק (אחרי draft). |
+| `error_message`, `retry_count` | TEXT, INT | למצב `'error'`. |
+| `notes` | TEXT | |
+| `created_at`, `updated_at` | TIMESTAMPTZ NOT NULL | |
+
+**Indexes:** `(tenant_id, customer_id, created_at DESC)`, `(tenant_id, status, doc_type)`, partial `(tenant_id, status) WHERE status='draft'`, `(tenant_id, external_provider, external_doc_series, external_doc_number)`, UNIQUE partial `(tenant_id, external_provider, external_unique_identifier) WHERE external_unique_identifier IS NOT NULL`.
+**RLS:** `tenant_id = current_tenant_id()` + branch isolation (sales/warehouse לסניף שלהם) + drafts owner-only (חוץ מ-`delivery_note`). ENABLE + FORCE RLS.
+**מוגדר ב:** PRD #19a
+
+---
+
+### `accounting_document_lines` — שורות פירוט (snapshot מ-order_items)
+
+| עמודה | סוג | תיאור |
+|---|---|---|
+| `id` | UUID PK | |
+| `document_id` | UUID NOT NULL | FK ל-`accounting_documents` ON DELETE CASCADE. |
+| `tenant_id` | UUID NOT NULL | |
+| `order_item_id` | UUID | FK ל-`order_items` (nullable). |
+| `line_number` | INT NOT NULL | 1, 2, 3 בתוך המסמך. UNIQUE `(document_id, line_number)`. |
+| `product_name`, `variant_desc`, `sku` | TEXT | snapshot. |
+| `quantity` | NUMERIC(10,3) NOT NULL | |
+| `unit_price`, `total_price` | NUMERIC(12,2) NOT NULL | |
+| `vat_rate` | NUMERIC(5,2) NOT NULL | DEFAULT 18. |
+| `created_at` | TIMESTAMPTZ NOT NULL | |
+
+**RLS:** `tenant_id = current_tenant_id()`. ENABLE + FORCE RLS.
+**מוגדר ב:** PRD #19a
+
+---
+
+### `document_links` — רציפות חשבונאית M:N
+
+| עמודה | סוג | תיאור |
+|---|---|---|
+| `id` | UUID PK | |
+| `tenant_id` | UUID NOT NULL | |
+| `parent_document_id` | UUID NOT NULL | FK ל-`accounting_documents` ON DELETE CASCADE. |
+| `child_document_id` | UUID NOT NULL | FK ל-`accounting_documents` ON DELETE CASCADE. |
+| `link_type` | TEXT NOT NULL | CHECK: `'invoice_aggregates_delivery_note'`, `'receipt_pays_invoice'`, `'credit_note_cancels_invoice'`, `'invoice_replaces_cancelled'`, `'tax_invoice_receipt_for_delivery'`. |
+| `amount_allocated` | NUMERIC(12,2) | כמה מהיתרה של ההורה נכנס לילד. |
+| `created_at` | TIMESTAMPTZ NOT NULL | |
+
+**Indexes:** `parent_document_id`, `child_document_id`. UNIQUE `(parent_document_id, child_document_id, link_type)`.
+**RLS:** `tenant_id = current_tenant_id()`. ENABLE + FORCE RLS.
+**מוגדר ב:** PRD #19a
+**הערה:** מתממש 1:1 עם פרמטרים של PayPlus API (`close_doc`, `cancel_doc`).
+
+---
+
+### `internal_notifications` — התראות פנים-מערכת (פעמון ב-TopBar)
+
+| עמודה | סוג | תיאור |
+|---|---|---|
+| `id` | UUID PK | |
+| `tenant_id` | UUID NOT NULL | FK ל-`tenants` ON DELETE CASCADE. |
+| `user_id` | UUID NOT NULL | FK ל-`users` ON DELETE CASCADE — התראות פר משתמש. |
+| `notification_type` | TEXT NOT NULL | CHECK: `'invoice_drafts_pending'`, `'document_error'`, `'provider_connection_failed'`. |
+| `payload` | JSONB NOT NULL | DEFAULT `'{}'::jsonb`. דוגמה: `{count: 7, link: "/documents/drafts"}`. |
+| `read_at` | TIMESTAMPTZ | NULL = לא נקראה. |
+| `created_at` | TIMESTAMPTZ NOT NULL | |
+
+**Indexes:** partial `(tenant_id, user_id) WHERE read_at IS NULL`.
+**RLS:** משתמש רואה רק את ההתראות של עצמו: `tenant_id = current_tenant_id() AND user_id = current_user_id()`. ENABLE + FORCE RLS.
+**מוגדר ב:** PRD #19a (FR-2c)
+
+---
+
+### שינויים ב-`orders` מ-PRD #19a
+
+עמודות חדשות (Dual-write transition — בטוח ל-rollback):
+
+| עמודה | סוג | תיאור |
+|---|---|---|
+| `payment_terms` | TEXT NOT NULL | DEFAULT `'immediate'`. CHECK: `'immediate'`/`'net_30'`/`'net_60'`. |
+| `invoice_document_id` | UUID | FK ל-`accounting_documents`. החשבונית שאיגדה את ההזמנה. |
+| `payment_external_ref` | TEXT | **חדש** — מחליף בהדרגה את `payplus_ref`. שלב 1: dual-write לשניהם. שלב 2: הסרת `payplus_ref` אחרי 2-3 שבועות + verification. |
+| `payment_provider` | TEXT | DEFAULT `'payplus'`. CHECK: `'payplus'` (P2: `'tranzila'`/`'cardcom'`/`'zcredit'`). |
+
+עדכון CHECK של `payment_method`:
+- היה: `('payplus_link','woocommerce','cash','transfer','credit')`
+- חדש: `('payment_link','payplus_link','woocommerce','cash','transfer','credit')` — `payplus_link` נשאר ל-backwards compat, `payment_link` נוסף כניטרלי
+
+**Index חדש:** partial `(tenant_id, payment_terms) WHERE payment_status='unpaid' AND payment_terms IN ('net_30','net_60')` — ל-cron החודשי שמייצר חשבוניות מאוחדות.
+
+---
+
+### Audit Actions חדשים מ-PRD #19a
+
+הוספה ל-Audit Actions ל-MVP:
+- `document.issued` (metadata: `{ doc_type, external_doc_number, provider }`)
+- `document.cancelled_by_credit_note`
+- `document.error` (metadata: `{ error_message, retry_count }`)
+- `invoice_draft.approved` (metadata: `{ count, total }`)
+- `invoice_correction.completed` (metadata: `{ original_id, credit_note_id, new_invoice_id }`)
+- `provider_settings.updated` (metadata: `{ provider_type: 'payment'|'invoice' }`)
+- `provider_connection.tested` (metadata: `{ provider, status }`)

@@ -153,10 +153,11 @@ Sprint 23-24: Enterprise Features, White-label, Scale 100+ tenants
 - [MVP] Green API (WhatsApp) — ערוץ ראשי
 - [MVP] WooCommerce Connector — דו-כיווני (sync מוצרים + קבלת הזמנות)
 - [MVP] WooCommerce Plugin — שדות pet-specific
-- [MVP] PayPlus — סליקה לעסקים (כל עסק מחבר חשבון משלו)
+- [MVP] PayPlus — סליקה לעסקים (PaymentProvider adapter, כל עסק מחבר חשבון משלו)
 - [MVP] PayPlus אשראי שמור — שמירת כרטיס לחיוב אוטומטי חוזר (בהסכמת לקוח)
-- [MVP] Morning (Greeninvoice) — חשבוניות (ארכיטקטורה פתוחה לספקים נוספים בעתיד)
-- [P2] iCount + ספקי חשבוניות נוספים
+- [MVP] **PayPlus Invoices** — חשבוניות (InvoiceProvider adapter, ספק החשבוניות הראשון. החלטה 2026-05-30 — PRD #19a)
+- [P2] Morning (Greeninvoice) — ספק חשבוניות חלופי (הוזז מ-MVP ל-P2 ב-2026-05-30. ה-Adapter pattern כבר תומך)
+- [P2] iCount + EZcount + ספקי חשבוניות נוספים
 - [P2] WhatsApp Cloud API (רשמי Meta)
 - [P2] Grow (Marketplace) — לאמת יכולות sub-merchant
 - [P2] Wolt / Bring API
@@ -196,6 +197,20 @@ Sprint 23-24: Enterprise Features, White-label, Scale 100+ tenants
 - [P2] תזמון ייבוא חוזר (cron) — לסנכרון אוטומטי מ-Google Sheets/URL
 
 ### 19. הנהלת חשבונות פנימית
+
+#### 19a. מסמכים חשבונאיים (PRD #19a — Ready, Sprint 7-8)
+- [MVP] חשבונית מס-קבלה (`tax_invoice_receipt`) — תשלום מיידי B2C
+- [MVP] תעודת משלוח (`delivery_note`) — משלוחים + proof-of-delivery image
+- [MVP] חשבונית זיכוי (`credit_note`) — לתיקון חשבוניות
+- [MVP] Wizard לתיקון חשבונית (4 שלבים — credit_note + חשבונית חדשה ב-transaction)
+- [MVP] רציפות חשבונאית M:N (`document_links` — `close_doc`/`cancel_doc`)
+- [MVP] חשבוניות-טיוטה לאישור owner (cron חודשי + פעמון התראות)
+- [MVP] PayPlus כספק חשבוניות (InvoiceProvider adapter)
+- [MVP] הצפנת credentials של ספקים (Supabase Vault)
+- [P2] חשבונית מס נפרדת (`tax_invoice`) + קבלה נפרדת (`receipt`) — לזרימת שוטף 30/60 (יתווסף עם PRD #16)
+- [P2] חשבונית עסקה / פרופורמה (`inv_proforma`), תעודת החזרה (`crt_return`), דרישת תשלום (`inv_pay_request`)
+
+#### 19b. דוחות וכרטסת (P2)
 - [P2] מעקב הכנסות — כל תשלום מלקוח (הזמנות + קישורי תשלום)
 - [P2] מעקב הוצאות — חשבוניות ספקים + הוצאות ידניות
 - [P2] כרטסת לקוח — היסטוריה פיננסית מלאה: חיובים, זיכויים, יתרה
@@ -217,7 +232,9 @@ Sprint 23-24: Enterprise Features, White-label, Scale 100+ tenants
 ### זרימה 2 — עסק גובה מלקוחות שלו
 ```
 לקוח (WooCommerce)   → PayPlus Plugin → הזמנה מגיעה ל-MasterPet כ"שולמה"
-לקוח (WhatsApp/טלפון) → MasterPet שולחת קישור → PayPlus של העסק → חשבונית (Morning)
+לקוח (WhatsApp/טלפון) → MasterPet שולחת קישור → PayPlus של העסק → חשבונית מס-קבלה (PayPlus Invoices, אוטומטי דרך webhook)
+                                                                  ↑
+                                                    InvoiceProvider adapter — Morning יחליף ב-P2 אם תרצה
 ```
 
 ---
@@ -226,7 +243,7 @@ Sprint 23-24: Enterprise Features, White-label, Scale 100+ tenants
 
 **Frontend:** Next.js 16 (App Router), shadcn/ui, Tailwind RTL, React Query, Zustand, React Joyride, Expo React Native (P2)
 **Backend:** Supabase Postgres + RLS, Supabase Auth + Magic Link, Edge Functions, Supabase Storage, pgvector (P2)
-**Integrations:** Green API (WhatsApp MVP), WhatsApp Cloud API (P2), WooCommerce REST + Plugin, PayPlus, Morning/Greeninvoice, Anthropic Claude API
+**Integrations:** Green API (WhatsApp MVP), WhatsApp Cloud API (P2), WooCommerce REST + Plugin, PayPlus (סליקה + חשבוניות ב-MVP), Morning/Greeninvoice (P2 — InvoiceProvider חלופי), Anthropic Claude API
 
 **DB Core Tables:** tenants · branches · users · permissions · products · customers · pets · orders (כולם עם tenant_id + branch_id + RLS)
 

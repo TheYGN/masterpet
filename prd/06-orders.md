@@ -3,6 +3,7 @@
 **פאזה:** MVP  
 **תאריך:** 2026-05-26  
 **סטטוס:** Done — DB + Actions + UI + Edge Functions + QA Automation (2026-05-26)  
+**⚠️ רפקטור מתוכנן (Sprint 7-8):** PRD #19a FR-2a יבצע dual-write transition — `payplus_ref` → `payment_external_ref`, `fn-payplus-create-link` → `fn-create-payment-link`, `fn-payplus-webhook` → `fn-payment-webhook`. ראה `prd/19a-invoicing-documents.md` + `prd/_shared/decisions-log.md` (PRD #19a, החלטה 2). ייתוסף `payment_method='payment_link'` כניטרלי (`'payplus_link'` נשאר ל-backwards compat).  
 **תלוי ב:** PRD #1 (Auth), PRD #3 (Products), PRD #5 (Customers)  
 **חוסם:** PRD #2 (Inbox), PRD #7 (Notifications), PRD #8 (Loyalty)
 

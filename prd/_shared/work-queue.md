@@ -2,7 +2,7 @@
 
 > **לקריאה ראשונה בכל סשן חדש.** הקובץ הזה מתאר איפה אנחנו, מה נעשה, ומה הצעד הבא.
 >
-> **עדכון אחרון:** 2026-05-26 — PRD #5 (Customers) Done (קוד+DB+עיצובים, ממתין לאימות e2e). PRD #6 (Orders) Done — DB + 11 Server Actions + UI + 3 Edge Functions + QA Automation passed. ניקיון צוות הסוכנים בוצע (5 ארוכבו, troy-intake+dispatch מוזגו ל-troy-execute).
+> **עדכון אחרון:** 2026-05-30 — **PRD #5 (Customers) אומת e2e + 4 ממצאי QA נסגרו** (רענון מיידי אחרי create/edit/delete, היסטוריית הזמנות אמיתית בכרטיס, מודאל מחיקה רכיב + Undo, רספונסיביות נדחתה ל-P2 ותועדה). code-reviewed (באג try/catch תוקן). ממתין ל-merge ידני. | PRD #6 (Orders) Done. | נוסף P2 #29 "Responsive admin shell".
 
 ---
 
@@ -53,21 +53,22 @@
 | 1 | **Auth + RBAC + קליטת עסק** | — | — | 1-2 | ✅ Done |
 | 3 | **Products + מלאי** | טקסונומיה, אריזות, מלאי רב-סניפי | #1 | 3-4 | ✅ Done (2026-05-25) |
 | 4 | **CSV/Excel Import Engine** | מנגנון ייבוא גנרי — Products ראשון, Customers שני | #3 | 3-4 | ✅ Done (2026-05-25) |
-| 5 | **Customers + Pet Profiles** | לקוחות, חיות, אלרגיות, קצב צריכה | #1, #4 | 5-6 | ✅ Done — DB (3,097 שורות) + קוד + עיצובים. ממתין לאימות e2e |
+| 5 | **Customers + Pet Profiles** | לקוחות, חיות, אלרגיות, קצב צריכה | #1, #4 | 5-6 | ✅ Done — אומת e2e (2026-05-30) + 4 ממצאי QA נסגרו + code-reviewed. ⏳ ממתין ל-merge |
 | 6 | **Orders Management + Subscription** | הזמנה חד-פעמית + מנוי, סטטוסים, קישור תשלום PayPlus | #1, #3, #5 | 5-6 | ✅ Done — DB + 11 Actions + UI + Edge Functions + QA (2026-05-26) |
 | 2 | **Order Inbox** | Green API, טלפון, WooCommerce, נירמול, Dedup | #3, #5, #6 | 5-6 | ⏸ דחוי — חסום ב-#5+#6 |
 | 7 | **Notification + Rule Engine** | Green API/SMS/Email, templates, If/Then | #1, #5, #6 | 5-6 | ממתין ל-#6 |
 | 8 | **Loyalty Engine** | נקודות/קרדיט, הנחת מנוי — הכל configurable | #1, #5, #6 | 5-6 | ממתין ל-#6 |
 | 9 | **שליחים (Couriers)** | MVP-A: PWA+Waze / MVP-B: מפה+GPS+מסלול | #1, #6 | 3-4 (A), 5-6 (B) | ממתין ל-#6 |
 | 10 | **Dashboards לפי תפקיד** | 4 תבניות קבועות, KPIs, Action-first, גרפים | #1, #6 | 7-8 | |
-| 11 | **Billing SaaS (פנימי)** | Tiers, Trial, PayPlus, דשבורד super_admin | #1 | 7-8 | |
-| 12 | **הדרכת משתמשים + מרכז עזרה** | Tooltips, Walkthroughs, Knowledge Base, Zoom | #1, #10 | 7-8 | |
-| 13 | **אינטגרציות חיצוניות** | Green API, WooCommerce Plugin B, PayPlus + אשראי שמור, Morning | #1, #3, #6 | 5-6 | |
+| 11 | **Billing SaaS (פנימי)** | Tiers, Trial, PayPlus, דשבורד super_admin | #1 | ~~7-8~~ → **9-10** | הוזז כדי לפנות מקום ל-#19a (2026-05-30) |
+| 12 | **הדרכת משתמשים + מרכז עזרה** | Tooltips, Walkthroughs, Knowledge Base, Zoom | #1, #10 | ~~7-8~~ → **9-10** | הוזז כדי לפנות מקום ל-#19a (2026-05-30) |
+| 13 | **אינטגרציות חיצוניות** | Green API, WooCommerce Plugin B, PayPlus + אשראי שמור, Morning (P2) | #1, #3, #6 | 5-6 | חלקי (Green API) ב-7-8 לתמיכה ב-#19a |
 | 14 | **Order Routing Engine** | שיבוץ ידני + סינון לפי סניף | #1, #6, #9 | 5-6 | |
 | 15 | **מנוע אזילה ידני** | ספירה לאחור, מינוס ימים, כרטסת מאחרים, איפוס בהזמנה | #1, #5, #7 | 7-8 | |
-| 16 | **אשראי לקוחות** | חוב/זכות, שוטף 30/60, דוח חייבים/זכות | #1, #6 | 7-8 | |
+| 16 | **אשראי לקוחות** | חוב/זכות, שוטף 30/60, דוח חייבים/זכות | #1, #6, **#19a** | ~~7-8~~ → **8** | ⚠️ חסום עד 19a + השלמת `tax_invoice`/`receipt` (נדחו מ-MVP של 19a ל-Phase 2 של 19a, מצורף ל-#16) |
 | 17 | **רווחיות ומכירות** | אחוז רווח פר מכירה, מחשבון רווח, דוח עובד, העברת סחורה | #1, #3, #11 | 7-8 | |
 | 18 | **ניהול עובדים** | שעון נוכחות כניסה/יציאה | #1 | 7-8 | |
+| **19a** | **Invoicing & Documents (PayPlus)** | 3 סוגי מסמכים: tax_invoice_receipt, delivery_note, credit_note. Adapter pattern (2 interfaces). dual-write רפקטור PRD #6. Vault encryption. internal notifications | #1, #5, #6 | **7-8** | ✅ **Ready** (2026-05-30 — challenger + roadmap-strategist עברו) |
 
 ### Phase 2 — Sprint 9-16
 
@@ -84,6 +85,7 @@
 | 26 | קטלוג ספקים + קליטת חשבוניות ספקים | חדש מדרישות לקוח |
 | 27 | הנהלת חשבונות פנימית (הכנסות/הוצאות/כרטסת/P&L) | חדש מדרישות לקוח |
 | 28 | Remote Support (Super Admin + מנהל→עובד) | חדש מדרישות לקוח |
+| 29 | **Responsive admin shell** | NavRail/TopBar/טבלאות → mobile/tablet. desktop-first ב-MVP (החלטה 2026-05-30). מובייל MVP = Courier PWA |
 
 ### Phase 3 — Sprint 17-24
 
@@ -103,7 +105,7 @@
 | MasterPet גובה מעסקים | ירין | PayPlus (חשבון של ירין) | Subscription חודשי |
 | עסק גובה מלקוחות — WooCommerce | לקוח | PayPlus Plugin (חשבון העסק) | מגיע ל-MasterPet כ"שולם" |
 | עסק גובה מלקוחות — WhatsApp/טלפון | לקוח | PayPlus API (חשבון העסק) | MasterPet שולחת קישור תשלום |
-| חשבוניות | — | Morning ראשון, פתוח לנוספים | iCount + אחרים ב-Phase 2 |
+| חשבוניות | — | **PayPlus ב-MVP** (Adapter pattern, 2 interfaces נפרדים) | Morning/iCount/EZcount ב-Phase 2 (החלטה 2026-05-30, PRD #19a) |
 
 ---
 
@@ -119,7 +121,8 @@
 | Edge Functions | ❌ טרם נכתב |
 | Green API (WhatsApp) | ❌ טרם חובר |
 | PayPlus | ❌ טרם חובר |
-| Morning (Greeninvoice) | ❌ טרם חובר |
+| PayPlus Invoices | 📝 ב-Draft ב-PRD #19a (Sprint 7-8) |
+| Morning (Greeninvoice) | ⏸ דחוי ל-Phase 2 (PRD #19a בחר PayPlus) |
 
 ---
 
