@@ -6,6 +6,7 @@ import { listCustomersAction, getCustomerKpisAction } from '../actions'
 import { CustomerKpiStrip } from './CustomerKpiStrip'
 import { CustomersTable } from './CustomersTable'
 import { CustomerSheet } from './CustomerSheet'
+import { CityFilter } from './CityFilter'
 import { ImportModal } from '../../products/_components/ImportModal'
 
 interface Branch { id: string; name: string }
@@ -16,6 +17,7 @@ interface CustomersClientProps {
   kpis: CustomerKpis
   pageSize: number
   branches: Branch[]
+  initialCities: string[]
   role: string
 }
 
@@ -25,6 +27,7 @@ export function CustomersClient({
   kpis: initialKpis,
   pageSize,
   branches,
+  initialCities,
   role,
 }: CustomersClientProps) {
   const [showNewSheet, setShowNewSheet] = useState(false)
@@ -33,6 +36,9 @@ export function CustomersClient({
 
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<CustomerStatus | 'all'>('all')
+  const [cityFilter, setCityFilter] = useState<string | undefined>(undefined)
+  // City list for the dropdown — seeded from the server; stable for the session.
+  const cities = initialCities
 
   const [customers, setCustomers] = useState<CustomerListItem[]>(initialCustomers)
   const [total, setTotal] = useState(initialTotal)
@@ -48,11 +54,18 @@ export function CustomersClient({
   const canWrite = role === 'owner' || role === 'branch_manager'
   const hasMore = loadedCount < total
 
-  function fetchPage(newSearch: string, newStatus: CustomerStatus | 'all', offset: number, append: boolean) {
+  function fetchPage(
+    newSearch: string,
+    newStatus: CustomerStatus | 'all',
+    newCity: string | undefined,
+    offset: number,
+    append: boolean,
+  ) {
     startSearch(async () => {
       const res = await listCustomersAction({
         search: newSearch.trim() || undefined,
         status: newStatus !== 'all' ? newStatus : undefined,
+        city: newCity || undefined,
         limit: pageSize,
         offset,
       })
@@ -72,14 +85,19 @@ export function CustomersClient({
     latestSearch.current = { search: value, status: statusFilter }
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
-      fetchPage(value, statusFilter, 0, false)
+      fetchPage(value, statusFilter, cityFilter, 0, false)
     }, 300)
   }
 
   function handleStatusChange(value: CustomerStatus | 'all') {
     setStatusFilter(value)
     latestSearch.current = { search, status: value }
-    fetchPage(search, value, 0, false)
+    fetchPage(search, value, cityFilter, 0, false)
+  }
+
+  function handleCityChange(value: string | undefined) {
+    setCityFilter(value)
+    fetchPage(search, statusFilter, value, 0, false)
   }
 
   function loadMore() {
@@ -87,6 +105,7 @@ export function CustomersClient({
       const res = await listCustomersAction({
         search: search.trim() || undefined,
         status: statusFilter !== 'all' ? statusFilter : undefined,
+        city: cityFilter || undefined,
         limit: pageSize,
         offset: loadedCount,
       })
@@ -107,6 +126,7 @@ export function CustomersClient({
         listCustomersAction({
           search: search.trim() || undefined,
           status: statusFilter !== 'all' ? statusFilter : undefined,
+          city: cityFilter || undefined,
           limit: pageSize,
           offset: 0,
         }),
@@ -217,6 +237,11 @@ export function CustomersClient({
               {label}
             </button>
           ))}
+
+          {/* Separator + city filter */}
+          <div style={{ width: 1, height: 20, background: 'var(--md-outline-variant)', marginInline: 4 }} />
+          <CityFilter cities={cities} value={cityFilter} onChange={handleCityChange} />
+
           <span style={{ marginInlineStart: 'auto', fontSize: 12, color: 'var(--md-on-surface-variant)' }}>
             מציג <strong>{loadedCount.toLocaleString()}</strong> מתוך <strong>{total.toLocaleString()}</strong> לקוחות
           </span>
@@ -267,6 +292,7 @@ export function CustomersClient({
         open={showImport}
         onClose={() => setShowImport(false)}
         target="customers"
+        onComplete={refreshData}
       />
 
       {/* Sheets */}

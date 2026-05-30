@@ -45,6 +45,7 @@ export interface ListCustomersFilters {
   search?: string
   status?: CustomerStatus
   branch_id?: string
+  city?: string
   limit?: number
   offset?: number
 }

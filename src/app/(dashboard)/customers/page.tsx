@@ -5,7 +5,7 @@
  * Phase: MVP — Sprint 5
  */
 import { requireActiveTenant, getAuthenticatedClient } from '@/app/lib/dal'
-import { listCustomersAction, getCustomerKpisAction } from './actions'
+import { listCustomersAction, getCustomerKpisAction, getCustomerCitiesAction } from './actions'
 import { CustomersClient } from './_components/CustomersClient'
 
 const PAGE_SIZE = 15
@@ -13,14 +13,16 @@ const PAGE_SIZE = 15
 export default async function CustomersPage() {
   const session = await requireActiveTenant()
 
-  const [kpisResult, customersResult] = await Promise.all([
+  const [kpisResult, customersResult, citiesResult] = await Promise.all([
     getCustomerKpisAction(),
     listCustomersAction({ limit: PAGE_SIZE, offset: 0 }),
+    getCustomerCitiesAction(),
   ])
 
   const kpis = kpisResult.data ?? { active: 0, inactive: 0, newThisMonth: 0, whatsappPct: 0 }
   const initialCustomers = customersResult.data?.customers ?? []
   const initialTotal = customersResult.data?.total ?? 0
+  const initialCities = citiesResult.data ?? []
 
   let branches: Array<{ id: string; name: string }> = []
   try {
@@ -43,6 +45,7 @@ export default async function CustomersPage() {
         kpis={kpis}
         pageSize={PAGE_SIZE}
         branches={branches}
+        initialCities={initialCities}
         role={session.profile.role}
       />
     </div>

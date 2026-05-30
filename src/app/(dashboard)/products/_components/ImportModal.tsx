@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef, useTransition } from 'react'
-import { useRouter } from 'next/navigation'
 import Papa from 'papaparse'
 import * as XLSX from 'xlsx'
 import {
@@ -61,10 +60,11 @@ interface ImportModalProps {
   open: boolean
   onClose: () => void
   target?: ImportTarget
+  /** Called after a successful import so the parent can refresh its list/KPIs. */
+  onComplete?: () => void
 }
 
-export function ImportModal({ open, onClose, target = 'products' }: ImportModalProps) {
-  const router = useRouter()
+export function ImportModal({ open, onClose, target = 'products', onComplete }: ImportModalProps) {
 
   const importFields = target === 'products' ? PRODUCT_IMPORT_FIELDS : CUSTOMER_IMPORT_FIELDS
   const duplicateKeyField = target === 'products' ? 'variant.sku' : 'customer.phone'
@@ -290,7 +290,7 @@ export function ImportModal({ open, onClose, target = 'products' }: ImportModalP
         const res = await importProductsAction(rowsData, conflictStrategy)
         if (res.error) { setImportError(res.error); return }
         setResult(res.data!)
-        router.refresh()
+        onComplete?.()
         setStep('done')
       })
     } else {
@@ -357,11 +357,11 @@ export function ImportModal({ open, onClose, target = 'products' }: ImportModalP
           failed: d.failed,
           errors: d.errors.map((e) => ({ rowIndex: e.rowIndex, sku: e.phone, reason: e.reason })),
         })
-        router.refresh()
+        onComplete?.()
         setStep('done')
       })
     }
-  }, [validatedRows, autoGenSku, conflictStrategy, router, target, mapping])
+  }, [validatedRows, autoGenSku, conflictStrategy, onComplete, target, mapping, placeholderPhone])
 
   if (!open) return null
 

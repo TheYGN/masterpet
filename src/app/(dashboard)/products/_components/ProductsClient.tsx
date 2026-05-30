@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, Suspense, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import type { ProductListItem, ListProductsFilters, ProductWithVariants } from '../types'
 import { getProductAction } from '../actions'
 import { KpiStrip } from './KpiStrip'
@@ -15,6 +16,7 @@ interface ProductsClientProps {
 }
 
 export function ProductsClient({ initialProducts }: ProductsClientProps) {
+  const router = useRouter()
   const [showNewSheet, setShowNewSheet] = useState(false)
   const [showImport, setShowImport] = useState(false)
   const [editingProduct, setEditingProduct] = useState<ProductWithVariants | null>(null)
@@ -97,7 +99,7 @@ export function ProductsClient({ initialProducts }: ProductsClientProps) {
         <LoadOverlay error={loadError} onDismiss={() => setLoadError(null)} />
       )}
 
-      <ImportModal open={showImport} onClose={() => setShowImport(false)} />
+      <ImportModal open={showImport} onClose={() => setShowImport(false)} onComplete={() => router.refresh()} />
     </>
   )
 }

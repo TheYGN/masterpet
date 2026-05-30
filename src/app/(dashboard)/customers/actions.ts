@@ -58,6 +58,9 @@ export const listCustomersAction = withAuth(
     if (filters.branch_id) {
       query = query.eq('branch_id', filters.branch_id)
     }
+    if (filters.city?.trim()) {
+      query = query.eq('city', filters.city.trim())
+    }
     if (filters.search?.trim()) {
       const term = escapeLike(filters.search.trim())
       query = query.or(`full_name.ilike.%${term}%,phone.ilike.%${term}%`)
@@ -128,6 +131,28 @@ export const getCustomerKpisAction = withAuth(
     const whatsappPct = active > 0 ? Math.round((whatsapp / active) * 100) : 0
 
     return { data: { active, inactive, newThisMonth, whatsappPct } }
+  }
+)
+
+// ============================================================================
+// 1c. getCustomerCitiesAction — distinct city list for the filter dropdown
+//     Backed by the get_customer_cities() RPC (SECURITY INVOKER → RLS fences
+//     the result to the caller's tenant). Must run through the JWT-pinned
+//     client so RLS sees the tenant.
+// ============================================================================
+
+export const getCustomerCitiesAction = withAuth(
+  ['owner', 'branch_manager', 'sales', 'warehouse'],
+  async (session): Promise<ActionResult<string[]>> => {
+    const supabase = await getAuthenticatedClient()
+    const { data, error } = await supabase.rpc('get_customer_cities')
+
+    if (error) {
+      console.error('[getCustomerCities] rpc failed', error)
+      return { error: GENERIC_ERROR }
+    }
+
+    return { data: (data ?? []) as string[] }
   }
 )
 
