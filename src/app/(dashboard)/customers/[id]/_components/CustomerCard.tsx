@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { CustomerListItem } from '../../types'
+import type { OrderListItem } from '../../../orders/types'
 import { OrderHistoryTable } from './OrderHistoryTable'
 
 const CHANNEL_LABEL: Record<string, string> = {
@@ -35,13 +36,20 @@ interface CustomerCardProps {
   customer: CustomerListItem
   role: string
   onEdit: () => void
+  orders: OrderListItem[]
+  ordersTotal: number
 }
 
-export function CustomerCard({ customer: c, role, onEdit }: CustomerCardProps) {
+export function CustomerCard({ customer: c, role, onEdit, orders, ordersTotal }: CustomerCardProps) {
   const [activeTab, setActiveTab] = useState<'orders' | 'activity'>('orders')
   const router = useRouter()
   const canWrite = role === 'owner' || role === 'branch_manager'
   const ch = CHANNEL_ICON[c.preferred_channel] ?? CHANNEL_ICON.phone
+
+  // Order stats — count is the accurate server total; sum is over the fetched
+  // page (limit 200 in the loader, covers virtually all single-customer cases).
+  const ordersSum = orders.reduce((acc, o) => acc + (o.total ?? 0), 0)
+  const lastOrderAt = orders.length > 0 ? orders[0].created_at : null
 
   const DetailRow = ({ icon, label, value }: { icon: string; label: string; value: string }) => (
     <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '8px 0' }}>
@@ -242,7 +250,16 @@ export function CustomerCard({ customer: c, role, onEdit }: CustomerCardProps) {
                 </button>
               ))}
             </div>
-            <OrderHistoryTable />
+            {activeTab === 'orders' ? (
+              <OrderHistoryTable orders={orders} />
+            ) : (
+              <div style={{
+                padding: '48px 24px', textAlign: 'center',
+                fontSize: 13, color: 'var(--md-on-surface-variant)',
+              }}>
+                יומן פעילות יתווסף בהמשך
+              </div>
+            )}
           </div>
         </div>
 
@@ -259,16 +276,21 @@ export function CustomerCard({ customer: c, role, onEdit }: CustomerCardProps) {
               <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--md-on-surface)' }}>נתוני לקוח</span>
             </div>
             <div style={{ borderTop: '1px solid var(--md-outline-variant)' }}>
-              <StatRow label="סה״כ הזמנות" value="—" sub="טרם בוצעו הזמנות" />
-              <StatRow label="סכום כולל" value="₪—" sub="נתון זמין לאחר הזמנה ראשונה" />
+              <StatRow
+                label="סה״כ הזמנות"
+                value={ordersTotal > 0 ? ordersTotal.toLocaleString('he-IL') : '0'}
+                sub={ordersTotal > 0 ? undefined : 'טרם בוצעו הזמנות'}
+              />
+              <StatRow
+                label="סכום כולל"
+                value={`₪${ordersSum.toLocaleString('he-IL')}`}
+                sub={ordersTotal > orders.length ? `מ-${orders.length} ההזמנות האחרונות` : undefined}
+              />
               <div style={{ padding: '12px 0' }}>
                 <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.4, color: 'var(--md-on-surface-variant)', marginBottom: 4 }}>הזמנה אחרונה</div>
-                <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--md-on-surface-variant)' }}>—</div>
-                <div style={{ fontSize: 11, color: 'var(--md-on-surface-variant)', marginTop: 2 }}>לא קיים עדיין</div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--md-on-surface-variant)' }}>{lastOrderAt ? formatDate(lastOrderAt) : '—'}</div>
+                {!lastOrderAt && <div style={{ fontSize: 11, color: 'var(--md-on-surface-variant)', marginTop: 2 }}>לא קיים עדיין</div>}
               </div>
-            </div>
-            <div style={{ marginTop: 8, fontSize: 11, color: 'var(--md-on-surface-variant)', fontStyle: 'italic' }}>
-              נתונים אלה יחושבו אוטומטית לאחר הטמעת מודול ההזמנות
             </div>
           </div>
 

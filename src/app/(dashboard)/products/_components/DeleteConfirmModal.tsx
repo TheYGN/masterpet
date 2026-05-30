@@ -6,6 +6,12 @@ interface DeleteConfirmModalProps {
   count: number
   onConfirm: () => void
   onCancel: () => void
+  /** Dialog heading. Defaults to the products copy. */
+  title?: string
+  /** Body micro-copy builder (singular vs plural). Defaults to the products copy. */
+  bodyText?: (count: number) => string
+  /** Primary CTA label builder. Defaults to the products copy. */
+  confirmLabel?: (count: number) => string
 }
 
 /**
@@ -13,8 +19,18 @@ interface DeleteConfirmModalProps {
  *   container bg --md-error-container, primary CTA bg --md-error.
  * Singular/plural micro-copy supplied by hebrew-rtl-expert.
  * Motion (§8): gentle scrim fade + 160ms scale-in, no bounce.
+ *
+ * Copy is parameterized (title/bodyText/confirmLabel) so other modules (e.g.
+ * customers) can reuse it; the defaults preserve the original products copy.
  */
-export function DeleteConfirmModal({ count, onConfirm, onCancel }: DeleteConfirmModalProps) {
+export function DeleteConfirmModal({
+  count,
+  onConfirm,
+  onCancel,
+  title: titleProp,
+  bodyText,
+  confirmLabel: confirmLabelProp,
+}: DeleteConfirmModalProps) {
   const [shown, setShown] = useState(false)
 
   useEffect(() => {
@@ -34,11 +50,17 @@ export function DeleteConfirmModal({ count, onConfirm, onCancel }: DeleteConfirm
   }, [onCancel])
 
   const isSingle = count === 1
-  const title = 'מחיקת מוצרים'
-  const body = isSingle
-    ? 'המוצר יימחק מהקטלוג. יהיו לך כמה שניות לבטל — אחרי זה המחיקה סופית.'
-    : `${count} מוצרים יימחקו מהקטלוג. יהיו לך כמה שניות לבטל — אחרי זה המחיקה סופית.`
-  const confirmLabel = isSingle ? 'מחק מוצר' : `מחק ${count} מוצרים`
+  const title = titleProp ?? 'מחיקת מוצרים'
+  const body = bodyText
+    ? bodyText(count)
+    : isSingle
+      ? 'המוצר יימחק מהקטלוג. יהיו לך כמה שניות לבטל — אחרי זה המחיקה סופית.'
+      : `${count} מוצרים יימחקו מהקטלוג. יהיו לך כמה שניות לבטל — אחרי זה המחיקה סופית.`
+  const confirmLabel = confirmLabelProp
+    ? confirmLabelProp(count)
+    : isSingle
+      ? 'מחק מוצר'
+      : `מחק ${count} מוצרים`
 
   return (
     <div

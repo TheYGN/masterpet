@@ -2,7 +2,7 @@
 
 import { useState, useRef, useTransition } from 'react'
 import type { CustomerKpis, CustomerListItem, CustomerStatus } from '../types'
-import { listCustomersAction } from '../actions'
+import { listCustomersAction, getCustomerKpisAction } from '../actions'
 import { CustomerKpiStrip } from './CustomerKpiStrip'
 import { CustomersTable } from './CustomersTable'
 import { CustomerSheet } from './CustomerSheet'
@@ -22,7 +22,7 @@ interface CustomersClientProps {
 export function CustomersClient({
   initialCustomers,
   initialTotal,
-  kpis,
+  kpis: initialKpis,
   pageSize,
   branches,
   role,
@@ -37,6 +37,7 @@ export function CustomersClient({
   const [customers, setCustomers] = useState<CustomerListItem[]>(initialCustomers)
   const [total, setTotal] = useState(initialTotal)
   const [loadedCount, setLoadedCount] = useState(initialCustomers.length)
+  const [kpis, setKpis] = useState<CustomerKpis>(initialKpis)
 
   const [isSearching, startSearch] = useTransition()
   const [isLoadingMore, startLoadingMore] = useTransition()
@@ -92,6 +93,31 @@ export function CustomersClient({
       if (!res.data) return
       setCustomers(prev => [...prev, ...res.data!.customers])
       setLoadedCount(prev => prev + res.data!.customers.length)
+    })
+  }
+
+  /**
+   * Re-fetch the first page + KPIs after a mutation (create / edit / delete /
+   * undo). Replaces the old `router.refresh()` reliance — that re-rendered the
+   * server component but never re-seeded this client list/KPI state.
+   */
+  function refreshData() {
+    startSearch(async () => {
+      const [listRes, kpiRes] = await Promise.all([
+        listCustomersAction({
+          search: search.trim() || undefined,
+          status: statusFilter !== 'all' ? statusFilter : undefined,
+          limit: pageSize,
+          offset: 0,
+        }),
+        getCustomerKpisAction(),
+      ])
+      if (listRes.data) {
+        setCustomers(listRes.data.customers)
+        setTotal(listRes.data.total)
+        setLoadedCount(listRes.data.customers.length)
+      }
+      if (kpiRes.data) setKpis(kpiRes.data)
     })
   }
 
@@ -203,6 +229,7 @@ export function CustomersClient({
         role={role}
         onEdit={setEditingCustomer}
         isLoading={isSearching}
+        onChange={refreshData}
       />
 
       {/* Load More */}
@@ -244,7 +271,11 @@ export function CustomersClient({
 
       {/* Sheets */}
       {showNewSheet && (
-        <CustomerSheet branches={branches} onClose={() => setShowNewSheet(false)} />
+        <CustomerSheet
+          branches={branches}
+          onClose={() => setShowNewSheet(false)}
+          onSaved={refreshData}
+        />
       )}
       {editingCustomer && (
         <CustomerSheet
@@ -252,6 +283,7 @@ export function CustomersClient({
           initialCustomer={editingCustomer}
           branches={branches}
           onClose={() => setEditingCustomer(null)}
+          onSaved={refreshData}
         />
       )}
     </>

@@ -51,5 +51,11 @@ next-env.d.ts
 # office temp lock files (e.g. ~$file.xlsx — created while a file is open)
 ~$*
 
+# local workflow helpers (one-off scripts, not source)
+.scratch/
+
+# excalidraw safety backups (dated copies kept locally, not in history)
+pet_platform_tree.excalidraw.backup-*
+
 .vercel
 .env*.local

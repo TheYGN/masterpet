@@ -1,9 +1,14 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useRef, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import type { CustomerListItem } from '../types'
-import { deleteCustomerAction } from '../actions'
+import { bulkDeleteCustomersAction, restoreCustomersAction } from '../actions'
+import { DeleteConfirmModal } from '../../products/_components/DeleteConfirmModal'
+import { ToastHost, type ToastSpec } from '../../products/_components/Toast'
+
+const UNDO_TOAST_MS = 6000
+const GENERIC_ERROR = 'הפעולה נכשלה, נסה שוב'
 
 const CHANNEL_ICON: Record<string, { icon: string; color: string; bg: string; label: string }> = {
   whatsapp: { icon: 'chat', color: '#fff', bg: '#25D366', label: 'WhatsApp' },
@@ -34,18 +39,48 @@ interface CustomersTableProps {
   role: string
   isLoading?: boolean
   onEdit: (customer: CustomerListItem) => void
+  /** Called after a delete/undo settles so the parent can refetch list + KPIs. */
+  onChange?: () => void
 }
 
-export function CustomersTable({ customers, role, isLoading, onEdit }: CustomersTableProps) {
+export function CustomersTable({ customers, role, isLoading, onEdit, onChange }: CustomersTableProps) {
   const [hoveredId, setHoveredId] = useState<string | null>(null)
   const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set())
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
 
+  // --- Soft-delete UX state (parity with ProductsTable) ---------------------
+  /** Rows optimistically hidden from view while the delete + undo window runs. */
+  const [removedIds, setRemovedIds] = useState<Set<string>>(new Set())
+  const [toasts, setToasts] = useState<ToastSpec[]>([])
+  /** Confirm modal — holds the ids pending confirmation. */
+  const [confirmState, setConfirmState] = useState<{ ids: string[] } | null>(null)
+  const toastSeq = useRef(0)
+  /** Timers spawned by a delete run — cleared on unmount. */
+  const finalizeTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
+
+  useEffect(() => {
+    const timers = finalizeTimersRef.current
+    return () => { timers.forEach(t => clearTimeout(t)) }
+  }, [])
+
   const canWrite = role === 'owner' || role === 'branch_manager'
   const canDelete = role === 'owner'
 
-  const filtered = customers
+  const pushToast = useCallback((t: Omit<ToastSpec, 'id'>): number => {
+    const id = ++toastSeq.current
+    setToasts(prev => [...prev, { ...t, id }])
+    return id
+  }, [])
+  const updateToast = useCallback((id: number, patch: Partial<ToastSpec>) => {
+    setToasts(prev => prev.map(t => (t.id === id ? { ...t, ...patch } : t)))
+  }, [])
+  const dismissToast = useCallback((id: number) => {
+    setToasts(prev => prev.filter(t => t.id !== id))
+  }, [])
+
+  // Visible rows = source minus optimistically-removed ones.
+  const filtered = customers.filter(c => !removedIds.has(c.id))
 
   const toggleBulk = (id: string) => {
     setBulkSelected(prev => {
@@ -65,51 +100,142 @@ export function CustomersTable({ customers, role, isLoading, onEdit }: Customers
     }
   }
 
-  const handleBulkDelete = () => {
-    if (!confirm(`למחוק ${bulkSelected.size} לקוחות? הפעולה אינה הפיכה.`)) return
+  /** Show the 6s Undo toast and finalize (sync server data) when it closes. */
+  const showUndoToast = (deletedIds: string[]) => {
+    const count = deletedIds.length
+    const toastId = pushToast({
+      message: count === 1 ? 'הלקוח הוסר' : `${count} לקוחות הוסרו`,
+      duration: UNDO_TOAST_MS,
+      action: {
+        label: 'בטל',
+        busyLabel: 'משחזר…',
+        onClick: () => {
+          updateToast(toastId, {
+            action: { label: 'בטל', busyLabel: 'משחזר…', busy: true, onClick: () => {} },
+          })
+          startTransition(async () => {
+            try {
+              const res = await restoreCustomersAction(deletedIds)
+              if (res.error || !res.data) {
+                updateToast(toastId, { action: undefined, message: res.error ?? GENERIC_ERROR, severity: 'error', duration: 4000 })
+                return
+              }
+              setRemovedIds(prev => {
+                const n = new Set(prev)
+                deletedIds.forEach(i => n.delete(i))
+                return n
+              })
+              dismissToast(toastId)
+              onChange?.()
+            } catch {
+              // Network/transport failure — don't leave the toast stuck on "משחזר…".
+              updateToast(toastId, { action: undefined, message: GENERIC_ERROR, severity: 'error', duration: 4000 })
+            }
+          })
+        },
+      },
+    })
+
+    // After the undo window closes: drop the ids from the optimistic set and
+    // refetch server data (the rows are gone server-side already).
+    const timer = setTimeout(() => {
+      finalizeTimersRef.current.delete(timer)
+      setRemovedIds(prev => {
+        const n = new Set(prev)
+        deletedIds.forEach(i => n.delete(i))
+        return n
+      })
+      onChange?.()
+    }, UNDO_TOAST_MS + 200)
+    finalizeTimersRef.current.add(timer)
+  }
+
+  const runDelete = (ids: string[]) => {
+    if (ids.length === 0) return
+    setConfirmState(null)
+    clearBulk()
+    // Optimistic removal.
+    setRemovedIds(prev => new Set([...prev, ...ids]))
+    const revert = (revertIds: string[]) =>
+      setRemovedIds(prev => {
+        const n = new Set(prev)
+        revertIds.forEach(i => n.delete(i))
+        return n
+      })
     startTransition(async () => {
-      let hasError = false;
-      for (const id of bulkSelected) {
-        const res = await deleteCustomerAction(id)
-        if (res?.error) {
-          alert(res.error)
-          hasError = true
-          break
+      try {
+        const res = await bulkDeleteCustomersAction(ids)
+        if (res.error || !res.data) {
+          revert(ids) // nothing was deleted
+          pushToast({ message: res.error ?? GENERIC_ERROR, severity: 'error', duration: 4000 })
+          return
         }
-      }
-      if (!hasError) {
-        clearBulk()
-        router.refresh()
+        const { deletedIds, failedIds } = res.data
+        if (failedIds.length > 0) {
+          revert(failedIds) // bring rows that couldn't be deleted back into view
+          pushToast({
+            message: `${failedIds.length} ${failedIds.length === 1 ? 'לקוח לא נמחק' : 'לקוחות לא נמחקו'}`,
+            severity: 'error',
+            duration: 4000,
+          })
+        }
+        if (deletedIds.length > 0) showUndoToast(deletedIds)
+      } catch {
+        // Network/transport failure — revert the optimistic removal so rows
+        // don't stay hidden forever, and surface the error.
+        revert(ids)
+        pushToast({ message: GENERIC_ERROR, severity: 'error', duration: 4000 })
       }
     })
   }
 
-  const handleDelete = (e: React.MouseEvent, customerId: string, name: string) => {
-    e.stopPropagation()
-    if (!confirm(`למחוק את "${name}"? הלקוח יוסר מהרשימה.`)) return
-    startTransition(async () => {
-      const result = await deleteCustomerAction(customerId)
-      if (result.error) alert(result.error)
-      else router.refresh()
-    })
+  const requestDelete = (ids: string[]) => {
+    if (ids.length === 0) return
+    setConfirmState({ ids })
   }
+
+  // Overlays (confirm modal + toast host) must render in BOTH the empty-state
+  // and the populated branch — otherwise deleting the last visible row hits the
+  // empty-state early-return and the Undo toast would never appear.
+  const overlays = (
+    <>
+      {confirmState && (
+        <DeleteConfirmModal
+          count={confirmState.ids.length}
+          title="הסרת לקוחות"
+          bodyText={(n) =>
+            n === 1
+              ? 'הלקוח יוסר מהרשימה. יהיו לך כמה שניות לבטל — אחרי זה ההסרה סופית.'
+              : `${n} לקוחות יוסרו מהרשימה. יהיו לך כמה שניות לבטל — אחרי זה ההסרה סופית.`
+          }
+          confirmLabel={(n) => (n === 1 ? 'הסר לקוח' : `הסר ${n} לקוחות`)}
+          onConfirm={() => runDelete(confirmState.ids)}
+          onCancel={() => setConfirmState(null)}
+        />
+      )}
+      <ToastHost toasts={toasts} onDismiss={dismissToast} />
+    </>
+  )
 
   if (filtered.length === 0) {
     return (
-      <div style={{
-        background: 'var(--md-surface-container-lowest)',
-        border: '1px dashed var(--md-outline-variant)',
-        borderRadius: 16, padding: '56px 24px',
-        display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 16,
-      }}>
-        <span className="ms" style={{ fontSize: 72, color: 'var(--md-outline)', fontVariationSettings: "'FILL' 0, 'wght' 300" }}>group</span>
-        <div>
-          <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--md-on-surface)' }}>אין לקוחות עדיין</div>
-          <div style={{ fontSize: 14, color: 'var(--md-on-surface-variant)', marginTop: 4, maxWidth: 360 }}>
-            הוסף לקוח ידנית או ייבא רשימה מ-Excel כדי להתחיל
+      <>
+        <div style={{
+          background: 'var(--md-surface-container-lowest)',
+          border: '1px dashed var(--md-outline-variant)',
+          borderRadius: 16, padding: '56px 24px',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 16,
+        }}>
+          <span className="ms" style={{ fontSize: 72, color: 'var(--md-outline)', fontVariationSettings: "'FILL' 0, 'wght' 300" }}>group</span>
+          <div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--md-on-surface)' }}>אין לקוחות עדיין</div>
+            <div style={{ fontSize: 14, color: 'var(--md-on-surface-variant)', marginTop: 4, maxWidth: 360 }}>
+              הוסף לקוח ידנית או ייבא רשימה מ-Excel כדי להתחיל
+            </div>
           </div>
         </div>
-      </div>
+        {overlays}
+      </>
     )
   }
 
@@ -323,7 +449,7 @@ export function CustomersTable({ customers, role, isLoading, onEdit }: Customers
                 )}
                 {hovered && canDelete && (
                   <button
-                    onClick={(e) => handleDelete(e, c.id, c.full_name)}
+                    onClick={(e) => { e.stopPropagation(); requestDelete([c.id]) }}
                     title="הסרה"
                     style={{
                       width: 32, height: 32, borderRadius: 8,
@@ -377,7 +503,7 @@ export function CustomersTable({ customers, role, isLoading, onEdit }: Customers
               <span className="ms" style={{ fontSize: 16 }}>select_all</span>
               בחר הכל
             </button>
-            <button onClick={handleBulkDelete} style={{
+            <button onClick={() => requestDelete([...bulkSelected])} style={{
               display: 'inline-flex', alignItems: 'center', gap: 6,
               height: 32, padding: '0 14px', borderRadius: 999,
               background: 'rgba(179,38,30,0.20)',
@@ -391,6 +517,8 @@ export function CustomersTable({ customers, role, isLoading, onEdit }: Customers
           </div>
         </div>
       )}
+
+      {overlays}
     </div>
   )
 }

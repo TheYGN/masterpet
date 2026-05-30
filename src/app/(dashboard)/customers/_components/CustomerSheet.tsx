@@ -13,6 +13,8 @@ interface CustomerSheetProps {
   initialCustomer?: CustomerListItem
   branches: Branch[]
   onClose: () => void
+  /** Called on successful save so a client list can refetch without reload. */
+  onSaved?: () => void
 }
 
 const CHANNEL_OPTIONS: Array<{ value: PreferredChannel; label: string; icon: string }> = [
@@ -42,7 +44,7 @@ function fromCustomer(c: CustomerListItem): CreateCustomerInput {
   }
 }
 
-export function CustomerSheet({ mode = 'create', initialCustomer, branches, onClose }: CustomerSheetProps) {
+export function CustomerSheet({ mode = 'create', initialCustomer, branches, onClose, onSaved }: CustomerSheetProps) {
   const [form, setForm] = useState<CreateCustomerInput>(
     mode === 'edit' && initialCustomer ? fromCustomer(initialCustomer) : emptyForm()
   )
@@ -100,6 +102,7 @@ export function CustomerSheet({ mode = 'create', initialCustomer, branches, onCl
         return
       }
 
+      onSaved?.()
       router.refresh()
       onClose()
     })

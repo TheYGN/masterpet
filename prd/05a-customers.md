@@ -257,7 +257,7 @@ export interface ListCustomersFilters {
 - [ ] ייבוא CSV: Import Engine עם mapping לשדות customers — preview + validation + import
 - [ ] KPI strip: לקוחות פעילים + חדשים החודש
 - [ ] `tsc --noEmit` — 0 errors
-- [ ] RTL תקין בכל ה-breakpoints (375px, 768px, 1440px)
+- [ ] RTL תקין ב-desktop (≥1280px). **375px/מובייל נדחה ל-P2** — כל ה-admin desktop-first בלי תשתית רספונסיבית; רספונסיביות מלאה היא פרויקט shell נפרד (מובייל = Courier PWA). ראה decisions-log 2026-05-30.
 
 ---
 

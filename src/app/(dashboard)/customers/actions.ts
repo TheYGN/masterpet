@@ -326,6 +326,145 @@ export const deleteCustomerAction = withAuth(
 )
 
 // ============================================================================
+// 5b. bulkDeleteCustomersAction — owner only (batch soft delete)
+//     Replaces the old frontend loop of N×deleteCustomerAction round-trips.
+//     Soft-deletes in chunks of BULK_DELETE_BATCH_SIZE via .in('id', batch).
+// ============================================================================
+
+/** Max ids per UPDATE statement — keeps the `id IN (...)` list bounded. */
+const BULK_DELETE_BATCH_SIZE = 50
+
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size))
+  return out
+}
+
+export const bulkDeleteCustomersAction = withAuth(
+  ['owner'],
+  async (
+    session,
+    customerIds: string[]
+  ): Promise<ActionResult<{ deletedIds: string[]; failedIds: string[] }>> => {
+    if (!Array.isArray(customerIds) || customerIds.length === 0) {
+      return { error: 'לא נבחרו לקוחות למחיקה' }
+    }
+
+    const ids = [...new Set(customerIds.filter((id): id is string => Boolean(id)))]
+    if (ids.length === 0) return { error: 'לא נבחרו לקוחות למחיקה' }
+
+    const supabase = await getAuthenticatedClient()
+    const deletedAt = new Date().toISOString()
+
+    const deletedIds: string[] = []
+    const failedIds: string[] = []
+
+    // RLS already fences by tenant_id; we scope by `.is('deleted_at', null)` so
+    // already-deleted rows are not re-deleted (and don't inflate the count).
+    for (const batch of chunk(ids, BULK_DELETE_BATCH_SIZE)) {
+      const { data, error } = await supabase
+        .from('customers')
+        .update({ deleted_at: deletedAt })
+        .in('id', batch)
+        .is('deleted_at', null)
+        .select('id')
+
+      if (error) {
+        console.error('[bulkDeleteCustomers] batch update failed', error)
+        failedIds.push(...batch)
+        continue
+      }
+
+      const okIds = new Set((data ?? []).map((r) => r.id as string))
+      for (const id of batch) {
+        if (okIds.has(id)) deletedIds.push(id)
+        else failedIds.push(id) // not found / wrong tenant / already deleted
+      }
+    }
+
+    if (deletedIds.length === 0) {
+      return { error: failedIds.length > 0 ? 'אף לקוח לא נמחק' : GENERIC_ERROR }
+    }
+
+    await writeAudit({
+      action: 'customer.bulk_deleted',
+      session,
+      entityType: 'customer',
+      entityId: null,
+      metadata: { count: deletedIds.length, ids: deletedIds },
+    })
+
+    revalidatePath(CUSTOMERS_PATH)
+    return { data: { deletedIds, failedIds } }
+  }
+)
+
+// ============================================================================
+// 5c. restoreCustomersAction — owner only (Undo for bulk/single delete)
+//     Sets deleted_at = null in batches. The LIVE customers RLS policy filters
+//     deleted_at in app queries (not in the policy), so getAuthenticatedClient
+//     can UPDATE soft-deleted rows; we add an explicit tenant fence anyway.
+// ============================================================================
+
+export const restoreCustomersAction = withAuth(
+  ['owner'],
+  async (
+    session,
+    customerIds: string[]
+  ): Promise<ActionResult<{ restoredIds: string[]; failedIds: string[] }>> => {
+    if (!Array.isArray(customerIds) || customerIds.length === 0) {
+      return { error: 'לא נבחרו לקוחות לשחזור' }
+    }
+
+    const ids = [...new Set(customerIds.filter((id): id is string => Boolean(id)))]
+    if (ids.length === 0) return { error: 'לא נבחרו לקוחות לשחזור' }
+
+    const tenantId = session.profile.tenant_id
+    const supabase = await getAuthenticatedClient()
+
+    const restoredIds: string[] = []
+    const failedIds: string[] = []
+
+    for (const batch of chunk(ids, BULK_DELETE_BATCH_SIZE)) {
+      const { data, error } = await supabase
+        .from('customers')
+        .update({ deleted_at: null })
+        .in('id', batch)
+        .eq('tenant_id', tenantId)
+        .not('deleted_at', 'is', null)
+        .select('id')
+
+      if (error) {
+        console.error('[restoreCustomers] batch update failed', error)
+        failedIds.push(...batch)
+        continue
+      }
+
+      const okIds = new Set((data ?? []).map((r) => r.id as string))
+      for (const id of batch) {
+        if (okIds.has(id)) restoredIds.push(id)
+        else failedIds.push(id) // not found / wrong tenant / not deleted
+      }
+    }
+
+    if (restoredIds.length === 0) {
+      return { error: failedIds.length > 0 ? 'אף לקוח לא שוחזר' : GENERIC_ERROR }
+    }
+
+    await writeAudit({
+      action: 'customer.restored',
+      session,
+      entityType: 'customer',
+      entityId: null,
+      metadata: { count: restoredIds.length, ids: restoredIds },
+    })
+
+    revalidatePath(CUSTOMERS_PATH)
+    return { data: { restoredIds, failedIds } }
+  }
+)
+
+// ============================================================================
 // 6. importCustomersAction — owner, branch_manager
 // ============================================================================
 
